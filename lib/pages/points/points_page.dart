@@ -68,10 +68,15 @@ class _PointsPageState extends State<PointsPage> {
             : !loggedIn
                 ? GeneralErrorWidget(
                     errMsg: '登录后即可签到获取积分',
-                    onPressed: () async {
-                      await context.pushNamed('/settings/account/');
-                      _load();
-                    },
+                    actions: [
+                      GeneralErrorButton(
+                        text: '去登录',
+                        onPressed: () async {
+                          await context.pushNamed('/settings/account/');
+                          _load();
+                        },
+                      ),
+                    ],
                   )
                 : ListView(
                     padding: const EdgeInsets.all(16),
