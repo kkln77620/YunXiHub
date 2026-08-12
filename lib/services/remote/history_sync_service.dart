@@ -125,15 +125,8 @@ class HistorySyncService {
         'entry_kind': h.entryKind,
         'episode_page_url': h.episodePageUrl,
         'last_watch_time': h.lastWatchTime.toIso8601String(),
-        'progresses': jsonEncode({
-          for (final e in h.progresses.entries)
-            e.key.toString(): {
-              'episode': e.value.episode,
-              'road': e.value.road,
-              'progress_ms': e.value.progress.inMilliseconds,
-              'updated_at_ms': e.value.updatedAtMs,
-            }
-        }),
+        // 隐私精简：云端只记录“看到第几集”，不上传分钟级播放进度
+        'progresses': '{}',
       });
     }
     return items;
@@ -216,6 +209,10 @@ class HistorySyncService {
       if (remoteTime == null) continue;
       final history = _buildHistory(it, remoteTime);
       if (history == null) continue;
+      // 云端不存分钟进度：拉取合并时保留本地分钟级进度，避免覆盖“继续观看”位置
+      if (history.progresses.isEmpty && local != null && local.progresses.isNotEmpty) {
+        history.progresses = local.progresses;
+      }
       await box.put(hkey, history);
     }
     await box.flush();

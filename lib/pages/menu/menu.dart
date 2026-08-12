@@ -145,7 +145,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
           NavigationDestination(
             selectedIcon: Icon(Icons.stars),
             icon: Icon(Icons.stars_outlined),
-            label: '积分',
+            label: '签到',
           ),
           NavigationDestination(
             selectedIcon: Icon(Icons.favorite),
@@ -198,7 +198,7 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                 NavigationRailDestination(
                   selectedIcon: Icon(Icons.stars),
                   icon: Icon(Icons.stars_outlined),
-                  label: Text('积分'),
+                  label: Text('签到'),
                 ),
                 NavigationRailDestination(
                   selectedIcon: Icon(Icons.favorite),

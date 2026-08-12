@@ -3,7 +3,6 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/history/history_module.dart';
-import 'package:kazumi/services/sync/history_sync_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/history_storage_coordinator.dart';
 
@@ -122,30 +121,15 @@ class HistoryRepository implements IHistoryRepository {
     required int progressMs,
     required int updatedAt,
   }) async {
-    final historySyncService = HistorySyncService();
-    await historySyncService.appendSafely(
-      () => historySyncService.appendUpsertProgress(
-        history: history,
-        episode: episode,
-        road: road,
-        progressMs: progressMs,
-        updatedAt: updatedAt,
-      ),
-    );
+    // WebDAV 同步已下线：完全由 YunXiHub 云服务器同步
   }
 
   static Future<void> _appendDeleteSync(History history) async {
-    final historySyncService = HistorySyncService();
-    await historySyncService.appendSafely(
-      () => historySyncService.appendDeleteHistory(history),
-    );
+    // WebDAV 同步已下线：完全由 YunXiHub 云服务器同步
   }
 
   static Future<void> _appendClearSync() async {
-    final historySyncService = HistorySyncService();
-    await historySyncService.appendSafely(
-      () => historySyncService.appendClearAll(),
-    );
+    // WebDAV 同步已下线：完全由 YunXiHub 云服务器同步
   }
 
   @override

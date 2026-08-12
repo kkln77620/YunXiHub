@@ -11,7 +11,6 @@ import 'package:kazumi/pages/player/syncplay_sheet.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/player/pip_utils.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
@@ -86,9 +85,6 @@ class _PlayerItemState extends State<PlayerItem>
   late final Map<String, PlayerShortcutAction> keyboardActions;
   late final Map<String, PlayerLongPressShortcutActions>
       keyboardLongPressActions;
-
-  late bool webDavEnable;
-  late bool webDavEnableHistory;
 
   final _danmuKey = GlobalKey();
   late bool _border;
@@ -472,17 +468,6 @@ class _PlayerItemState extends State<PlayerItem>
     unawaited(_updateAndroidPIPActions(force: true));
   }
 
-  Future<void> _syncHistoryWithWebDav() async {
-    if (webDavEnable && webDavEnableHistory) {
-      try {
-        var webDav = WebDav();
-        await webDav.syncHistory();
-      } catch (e) {
-        KazumiLogger().w('WebDav: auto history sync failed', error: e);
-      }
-    }
-  }
-
   Future<void> _bindAudioService() async {
     try {
       await _audioController.bindCallbacks(
@@ -559,8 +544,6 @@ class _PlayerItemState extends State<PlayerItem>
     playerController.panel.lockPanel = false;
     _releasePlayerPanelHolds();
     playerController.danmaku.canvasController.clear();
-
-    await _syncHistoryWithWebDav();
   }
 
   void handleProgressBarDragStart() {
@@ -1286,8 +1269,6 @@ class _PlayerItemState extends State<PlayerItem>
       parent: _screenshotFeedbackController,
       curve: Curves.linear,
     );
-    webDavEnable = GStorage.getSetting(SettingsKeys.webDavEnable);
-    webDavEnableHistory = GStorage.getSetting(SettingsKeys.webDavEnableHistory);
     playerController.danmaku.setDanmakuEnabled(
       GStorage.getSetting(SettingsKeys.danmakuEnabledByDefault),
     );

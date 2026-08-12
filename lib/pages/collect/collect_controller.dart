@@ -6,7 +6,6 @@ import 'package:kazumi/modules/collect/collect_module.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
 import 'package:kazumi/services/sync/bangumi_sync_service.dart';
 import 'package:kazumi/services/storage/storage.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/repositories/collect_crud_repository.dart';
 import 'package:kazumi/repositories/collect_repository.dart';
 import 'package:kazumi/services/remote/collect_sync_service.dart';
@@ -225,78 +224,6 @@ abstract class _CollectController with Store {
     await _collectCrudRepository.updateCollectible(bangumiItem);
     loadCollectibles();
     CollectSyncService.instance.scheduleSync();
-  }
-
-  Future<bool> syncCollectibles({bool showSuccessToast = true}) async {
-    final bool webDavCollectEnable =
-        GStorage.getSetting(SettingsKeys.webDavEnableCollect);
-    if (!webDavCollectEnable) {
-      KazumiDialog.showToast(message: '未开启WebDav收藏同步');
-      return false;
-    }
-    if (!WebDav().initialized) {
-      KazumiDialog.showToast(message: '未开启WebDav同步或配置无效');
-      return false;
-    }
-    bool flag = true;
-    try {
-      await WebDav().ping();
-    } catch (e) {
-      KazumiLogger().e('WebDav: WebDav connection failed', error: e);
-      KazumiDialog.showToast(message: 'WebDav连接失败: $e');
-      flag = false;
-    }
-    if (!flag) {
-      return false;
-    }
-    try {
-      await WebDav().syncCollectibles();
-      if (showSuccessToast) {
-        KazumiDialog.showToast(message: 'WebDav同步完成');
-      }
-    } catch (e) {
-      KazumiDialog.showToast(message: 'WebDav同步失败 $e');
-      return false;
-    }
-    loadCollectibles();
-    return true;
-  }
-
-  /// Only upload local collectibles and change logs to WebDAV, without downloading and merging.
-  /// Used by full sync to push Bangumi-updated local changes back to WebDAV.
-  Future<bool> uploadCollectiblesToWebDav(
-      {bool showSuccessToast = true}) async {
-    final bool webDavCollectEnable =
-        GStorage.getSetting(SettingsKeys.webDavEnableCollect);
-    if (!webDavCollectEnable) {
-      KazumiDialog.showToast(message: '未开启WebDav收藏同步');
-      return false;
-    }
-    if (!WebDav().initialized) {
-      KazumiDialog.showToast(message: '未开启WebDav同步或配置无效');
-      return false;
-    }
-    bool flag = true;
-    try {
-      await WebDav().ping();
-    } catch (e) {
-      KazumiLogger().e('WebDav: WebDav connection failed', error: e);
-      KazumiDialog.showToast(message: 'WebDav连接失败: $e');
-      flag = false;
-    }
-    if (!flag) {
-      return false;
-    }
-    try {
-      await WebDav().updateCollectibles();
-      if (showSuccessToast) {
-        KazumiDialog.showToast(message: 'WebDav上传完成');
-      }
-    } catch (e) {
-      KazumiDialog.showToast(message: 'WebDav上传失败 $e');
-      return false;
-    }
-    return true;
   }
 
   // migrate collect from old version (favorites)

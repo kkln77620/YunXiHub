@@ -106,7 +106,7 @@ final List<_SettingsGroup> _settingsGroups = [
       _SettingsCategory(
         id: 'sync',
         label: '同步设置',
-        description: 'WebDav 与 Bangumi 同步',
+        description: 'YunXiHub 云同步与 Bangumi 同步',
         icon: Icons.cloud_rounded,
         builder: (_) => const WebDavSettingsPage(),
       ),

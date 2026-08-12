@@ -40,9 +40,9 @@ class CollectSyncService {
     return base;
   }
 
-  /// 立即同步：先上传本地收藏，再拉取合并（失败静默）
-  Future<void> syncNow() async {
-    if (!_ready || !_enabled) return;
+  /// 立即同步：先上传本地收藏，再拉取合并；成功返回 true
+  Future<bool> syncNow() async {
+    if (!_ready || !_enabled) return false;
     try {
       final localItems = _serializeLocal();
       await _postSync(localItems);
@@ -50,8 +50,10 @@ class CollectSyncService {
       if (remoteItems.isNotEmpty) {
         await _mergeRemote(remoteItems);
       }
+      return true;
     } catch (_) {
-      // 静默失败：离线/服务器异常不影响本地使用
+      // 失败不抛异常：离线/服务器异常不影响本地使用
+      return false;
     }
   }
 

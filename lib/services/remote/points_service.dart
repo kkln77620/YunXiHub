@@ -26,6 +26,9 @@ class PointsService {
 
   static final PointsService instance = PointsService._();
 
+  /// 最近一次查询的积分缓存：页面切换时秒显，不重复转圈
+  PointsInfo? cached;
+
   bool get _loggedIn =>
       GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
 
@@ -38,24 +41,22 @@ class PointsService {
     return base;
   }
 
-  /// 查询当前积分（未登录返回 null）
+  /// 查询当前积分（未登录返回 null；已登录但网络失败抛异常，由页面区分展示）
   Future<PointsInfo?> me() async {
     if (!_loggedIn) return null;
-    try {
-      final response = await _dio.get<dynamic>('$_baseUrl/api/points/me');
-      final raw = response.data;
-      final data = raw is String
-          ? (jsonDecode(raw) as Map).cast<String, dynamic>()
-          : (raw as Map).cast<String, dynamic>();
-      if (data['code'] != 0) return null;
-      return PointsInfo(
-        points: (data['points'] as num?)?.toInt() ?? 0,
-        lastCheckin: data['last_checkin']?.toString() ?? '',
-        today: data['today']?.toString() ?? '',
-      );
-    } catch (_) {
-      return null;
-    }
+    final response = await _dio.get<dynamic>('$_baseUrl/api/points/me');
+    final raw = response.data;
+    final data = raw is String
+        ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+        : (raw as Map).cast<String, dynamic>();
+    if (data['code'] != 0) return null;
+    final info = PointsInfo(
+      points: (data['points'] as num?)?.toInt() ?? 0,
+      lastCheckin: data['last_checkin']?.toString() ?? '',
+      today: data['today']?.toString() ?? '',
+    );
+    cached = info;
+    return info;
   }
 
   /// 每日签到：成功返回新积分；已签到返回 null（msg 区分）；未登录抛异常

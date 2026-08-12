@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/services/sync/bangumi_sync_service.dart';
-import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -58,7 +57,6 @@ class _InitPageState extends State<InitPage> {
     _migrateStorage();
     _loadShaders();
     _loadDanmakuShield();
-    _webDavInit();
     _bangumiInit();
     try {
       await downloadController.init();
@@ -167,33 +165,6 @@ class _InitPageState extends State<InitPage> {
 
   Future<void> _loadDanmakuShield() async {
     myController.loadShieldList();
-  }
-
-  Future<void> _webDavInit() async {
-    bool webDavEnable = await GStorage.getSetting(SettingsKeys.webDavEnable);
-    if (webDavEnable) {
-      var webDav = WebDav();
-      KazumiLogger().i('WebDav: Starting WebDav initialization');
-      try {
-        await webDav.init();
-        try {
-          await webDav.syncHistory();
-          KazumiLogger().i('WebDav: Completed syncing watch history');
-        } catch (e, stackTrace) {
-          KazumiLogger().w(
-            'WebDav: automatic watch history sync failed',
-            error: e,
-            stackTrace: stackTrace,
-          );
-        }
-      } catch (e, stackTrace) {
-        KazumiLogger().w(
-          'WebDav: automatic initialization failed',
-          error: e,
-          stackTrace: stackTrace,
-        );
-      }
-    }
   }
 
   Future<void> _bangumiInit() async {
