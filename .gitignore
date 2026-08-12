@@ -54,8 +54,3 @@ android/build/reports/problems/
 **/macos/Pods/
 **/ios/Podfile.lock
 **/macos/Podfile.lock
-
-# Operit
-.backup/
-.operit/
-resolver-server/

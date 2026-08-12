@@ -147,8 +147,9 @@ class AuthService {
         user['vip_expire']?.toString() ?? '',
       );
     }
-    // 登录/注册成功即同步历史记录（失败静默）
+    // 登录/注册成功即同步历史记录，并把游客设备数据并入账号（失败静默）
     unawaited(HistorySyncService.instance.syncNow());
+    unawaited(HistorySyncService.instance.mergeGuestToAccount());
   }
 
   Future<Map<String, dynamic>> _post(

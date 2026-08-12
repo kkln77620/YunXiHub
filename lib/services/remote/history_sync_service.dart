@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/services/remote/collect_sync_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -22,8 +23,31 @@ class HistorySyncService {
   Timer? _debounceTimer;
   static const Duration _debounceDelay = Duration(seconds: 20);
 
+  /// 未登录游客也可同步：需要本地设备标识
   bool get _ready {
-    return AuthTokenHolder.token.isNotEmpty && _baseUrl.isNotEmpty;
+    return _baseUrl.isNotEmpty && (AuthTokenHolder.token.isNotEmpty || deviceId.isNotEmpty);
+  }
+
+  /// 云历史同步总开关
+  bool get _enabled {
+    return GStorage.getSetting(SettingsKeys.cloudHistorySyncEnable);
+  }
+
+  /// 设备标识（游客维度；登录后作为 X-Device-Id 供 merge 使用）
+  String get deviceId {
+    var id = GStorage.getSetting(SettingsKeys.historySyncDeviceId).trim();
+    if (id.isEmpty) {
+      id = _generateDeviceId();
+      GStorage.putSetting(SettingsKeys.historySyncDeviceId, id);
+    }
+    return id;
+  }
+
+  String _generateDeviceId() {
+    final rand = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    final salt = (0x1D2E3F4A + DateTime.now().millisecondsSinceEpoch % 0xFFFF)
+        .toRadixString(16);
+    return 'yh-$rand$salt';
   }
 
   String get _baseUrl {
@@ -37,7 +61,7 @@ class HistorySyncService {
 
   /// 登录后调用：先上传本地，再拉取合并（失败静默，不阻塞登录）
   Future<void> syncNow() async {
-    if (!_ready) return;
+    if (!_ready || !_enabled) return;
     try {
       final localItems = _serializeLocal();
       await _postSync(localItems);
@@ -50,18 +74,34 @@ class HistorySyncService {
     }
   }
 
-  /// 历史记录变化时调用：20 秒防抖后自动同步（登录状态下）
+  /// 登录成功后把游客设备数据并入账号（服务器按 hkey 合并取新）
+  Future<void> mergeGuestToAccount() async {
+    final token = AuthTokenHolder.token;
+    if (token.isEmpty) return;
+    try {
+      final dev = deviceId;
+      await _dio.post<dynamic>(
+        '$_baseUrl/api/history/merge',
+        data: {'device_id': dev},
+      );
+      await CollectSyncService.instance.mergeGuestToAccount();
+    } catch (_) {
+      // 合并失败静默，下次登录可重试
+    }
+  }
+
+  /// 历史记录变化时调用：20 秒防抖后自动同步（登录/游客均可）
   void scheduleSync() {
-    if (!_ready) return;
+    if (!_ready || !_enabled) return;
     _debounceTimer?.cancel();
     _debounceTimer = Timer(_debounceDelay, () {
       unawaited(syncNow());
     });
   }
 
-  /// 应用启动/回到前台时调用：登录状态下立即同步一次
+  /// 应用启动/回到前台时调用：立即同步一次
   Future<void> syncOnLaunch() async {
-    if (!_ready) return;
+    if (!_ready || !_enabled) return;
     await syncNow();
     // 之后进入防抖自动同步节奏
   }
@@ -246,12 +286,14 @@ class HistorySyncService {
   }
 
   Dio get _dio {
+    final token = AuthTokenHolder.token;
     return Dio(BaseOptions(
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${AuthTokenHolder.token}',
+        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        'X-Device-Id': deviceId,
       },
     ));
   }

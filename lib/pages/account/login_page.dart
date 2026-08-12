@@ -183,7 +183,7 @@ class _LoginPageState extends State<LoginPage>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'YunXiHub 云服务',
+                  'YunXiHub',
                   textAlign: TextAlign.center,
                   style: Theme.of(context)
                       .textTheme

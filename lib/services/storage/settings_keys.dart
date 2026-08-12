@@ -210,7 +210,7 @@ class SettingsKeys {
   );
   static const themeColor = SettingKey<String>(
     _SettingBoxKey.themeColor,
-    'default',
+    'a79e91',
     group: SettingGroup.theme,
   );
   static const privateMode = SettingKey<bool>(
@@ -390,7 +390,7 @@ class SettingsKeys {
   );
   static const useSystemFont = SettingKey<bool>(
     _SettingBoxKey.useSystemFont,
-    false,
+    true,
     group: SettingGroup.theme,
   );
   static const forceAdBlocker = SettingKey<bool>(
@@ -454,6 +454,17 @@ class SettingsKeys {
     'authVipExpire',
     '',
     group: SettingGroup.misc,
+  );
+  // YunXiHub 云同步（历史/追番，登录账号或游客设备均可，默认开启）
+  static const cloudHistorySyncEnable = SettingKey<bool>(
+    'cloudHistorySyncEnable',
+    true,
+    group: SettingGroup.sync,
+  );
+  static const cloudCollectSyncEnable = SettingKey<bool>(
+    'cloudCollectSyncEnable',
+    true,
+    group: SettingGroup.sync,
   );
   static const showRating = SettingKey<bool>(
     _SettingBoxKey.showRating,

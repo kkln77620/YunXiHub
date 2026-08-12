@@ -25,6 +25,7 @@ class MenuRoute {
 const MenuRoute menu = MenuRoute([
   MenuRouteItem(path: '/popular'),
   MenuRouteItem(path: '/timeline'),
+  MenuRouteItem(path: '/points'),
   MenuRouteItem(path: '/collect'),
   MenuRouteItem(path: '/my'),
 ]);

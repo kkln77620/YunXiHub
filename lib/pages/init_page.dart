@@ -16,6 +16,7 @@ import 'package:kazumi/pages/plugin_editor/plugin_update_actions.dart';
 import 'package:kazumi/services/download/background_download_service.dart';
 import 'package:kazumi/services/platform/windows_shortcut.dart';
 import 'package:kazumi/services/platform/platform_environment_service.dart';
+import 'package:kazumi/services/remote/collect_sync_service.dart';
 import 'package:kazumi/services/remote/history_sync_service.dart';
 import 'package:kazumi/services/update/startup_update_check.dart';
 import 'package:kazumi/navigation.dart';
@@ -69,8 +70,9 @@ class _InitPageState extends State<InitPage> {
     await _checkRunningOnX11();
     await _showShortcutDialog();
     await _pluginInit();
-    // 登录状态下启动即同步一次云端历史记录（失败静默）
+    // 登录状态下启动即同步一次云端历史/追番记录（游客设备同样同步，失败静默）
     unawaited(HistorySyncService.instance.syncOnLaunch());
+    unawaited(CollectSyncService.instance.syncOnLaunch());
 
     if (!mounted) {
       return;

@@ -9,6 +9,7 @@ import 'package:kazumi/pages/my/my_module.dart';
 import 'package:kazumi/pages/onboarding/onboarding_page.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/pages/popular/popular_module.dart';
+import 'package:kazumi/pages/points/points_module.dart';
 import 'package:kazumi/pages/route_error_page.dart';
 import 'package:kazumi/pages/search/search_module.dart';
 import 'package:kazumi/pages/settings/settings_module.dart';
@@ -58,6 +59,7 @@ final tabModule = createModule(
             )
             ..module(popularModule)
             ..module(timelineModule)
+            ..module(pointsModule)
             ..module(collectModule)
             ..module(myModule);
         },

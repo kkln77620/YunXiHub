@@ -9,6 +9,7 @@ import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/webdav.dart';
 import 'package:kazumi/repositories/collect_crud_repository.dart';
 import 'package:kazumi/repositories/collect_repository.dart';
+import 'package:kazumi/services/remote/collect_sync_service.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/services/logging/logger.dart';
 
@@ -79,6 +80,8 @@ abstract class _CollectController with Store {
       type: type,
     );
     loadCollectibles();
+    // 追番变化自动云同步（20 秒防抖，登录/游客均可）
+    CollectSyncService.instance.scheduleSync();
   }
 
   @action
@@ -116,6 +119,7 @@ abstract class _CollectController with Store {
       type: 5,
     );
     loadCollectibles();
+    CollectSyncService.instance.scheduleSync();
   }
 
   Future<_BangumiDeleteSyncAction?> _resolveBangumiDeleteSyncAction(
@@ -220,6 +224,7 @@ abstract class _CollectController with Store {
   Future<void> updateLocalCollect(BangumiItem bangumiItem) async {
     await _collectCrudRepository.updateCollectible(bangumiItem);
     loadCollectibles();
+    CollectSyncService.instance.scheduleSync();
   }
 
   Future<bool> syncCollectibles({bool showSuccessToast = true}) async {

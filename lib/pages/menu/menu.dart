@@ -143,6 +143,11 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
             label: '时间表',
           ),
           NavigationDestination(
+            selectedIcon: Icon(Icons.stars),
+            icon: Icon(Icons.stars_outlined),
+            label: '积分',
+          ),
+          NavigationDestination(
             selectedIcon: Icon(Icons.favorite),
             icon: Icon(Icons.favorite_outlined),
             label: '追番',
@@ -189,6 +194,11 @@ class _ScaffoldMenu extends State<ScaffoldMenu> with RouteAware {
                   selectedIcon: Icon(Icons.timeline),
                   icon: Icon(Icons.timeline_outlined),
                   label: Text('时间表'),
+                ),
+                NavigationRailDestination(
+                  selectedIcon: Icon(Icons.stars),
+                  icon: Icon(Icons.stars_outlined),
+                  label: Text('积分'),
                 ),
                 NavigationRailDestination(
                   selectedIcon: Icon(Icons.favorite),
