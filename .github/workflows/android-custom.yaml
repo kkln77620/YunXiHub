@@ -1,0 +1,40 @@
+name: "android-custom"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: "Build custom APK (YunXiHub remote resolver)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.16.0
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        shell: bash
+
+      - name: Build APK
+        run: flutter build apk --release --dart-define=DANDANAPI_APPID=${{ secrets.DANDANAPI_APPID }} --dart-define=DANDANAPI_KEY=${{ secrets.DANDANAPI_KEY }}
+        shell: bash
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kazumi-custom-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
