@@ -9,11 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
@@ -35,44 +30,8 @@ jobs:
         shell: bash
 
       # ---- YunXiHub 固定签名 ----
-      # 第一次构建（Secret 未配置）自动生成 keystore 并上传 artifact，
-      # 下载后 base64 存入 ANDROID_KEYSTORE_BASE64，之后所有构建复用同一签名。
-      - name: Prepare signing from secret
-        if: ${{ env.KEYSTORE_B64 != '' }}
-        shell: bash
-        run: |
-          echo "$KEYSTORE_B64" | base64 -d > android/app/yunxihub-release.keystore
-          cat > android/key.properties <<EOF
-          storeFile=../app/yunxihub-release.keystore
-          storePassword=$KEYSTORE_PASS
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASS
-          EOF
-
-      - name: Seed keystore (first run)
-        if: ${{ env.KEYSTORE_B64 == '' }}
-        shell: bash
-        run: |
-          keytool -genkeypair -v \
-            -keystore android/app/yunxihub-release.keystore \
-            -alias yunxihub -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass YunxiKey@2026 -keypass YunxiKey@2026 \
-            -dname "CN=YunXiHub, OU=YunXi, O=YunXi, L=Beijing, ST=Beijing, C=CN"
-          cat > android/key.properties <<EOF
-          storeFile=../app/yunxihub-release.keystore
-          storePassword=YunxiKey@2026
-          keyAlias=yunxihub
-          keyPassword=YunxiKey@2026
-          EOF
-
-      - name: Upload keystore seed (first run only)
-        if: ${{ env.KEYSTORE_B64 == '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: yunxihub-keystore-seed
-          path: |
-            android/app/yunxihub-release.keystore
-            android/key.properties
+      # keystore 已入库（android/app/yunxihub-release.keystore + android/key.properties），
+      # 所有构建使用同一签名，覆盖安装不再提示签名不一致。
 
       - name: Build APK
         run: flutter build apk --release --dart-define=DANDANAPI_APPID=${{ secrets.DANDANAPI_APPID }} --dart-define=DANDANAPI_KEY=${{ secrets.DANDANAPI_KEY }}
