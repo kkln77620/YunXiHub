@@ -253,6 +253,17 @@ class _MyPageState extends State<MyPage> {
     final bool loggedIn =
         GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
     final String email = GStorage.getSetting(SettingsKeys.authEmail);
+    final String nickname = GStorage.getSetting(SettingsKeys.authNickname);
+    final String avatar = GStorage.getSetting(SettingsKeys.authAvatar);
+    final String baseUrl = GStorage.getSetting(SettingsKeys.remoteResolverBaseUrl)
+        .trim()
+        .replaceAll(RegExp(r'/+$'), '');
+    final String displayName = loggedIn
+        ? (nickname.isNotEmpty ? nickname : (email.isNotEmpty ? email : '账号'))
+        : '登录 / 注册';
+    final String subtitle = loggedIn
+        ? (email.isNotEmpty ? email : '已登录，点击管理账号')
+        : '登录、注册与赞助用户状态';
     return Material(
       color: colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(_cardRadius),
@@ -270,11 +281,42 @@ class _MyPageState extends State<MyPage> {
                   color: colorScheme.primaryContainer,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  loggedIn ? Icons.person_rounded : Icons.account_circle_rounded,
-                  size: 22,
-                  color: colorScheme.onPrimaryContainer,
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: loggedIn
+                    ? (avatar.isNotEmpty
+                        ? Image.network(
+                            avatar.startsWith('http')
+                                ? avatar
+                                : '$baseUrl$avatar',
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.person_rounded,
+                              size: 22,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                          )
+                        : (nickname.isNotEmpty
+                            ? Center(
+                                child: Text(
+                                  nickname.characters.first,
+                                  style: textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.onPrimaryContainer,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.person_rounded,
+                                size: 22,
+                                color: colorScheme.onPrimaryContainer,
+                              )))
+                    : Icon(
+                        Icons.account_circle_rounded,
+                        size: 22,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -282,16 +324,16 @@ class _MyPageState extends State<MyPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      loggedIn ? '账号' : '登录 / 注册',
+                      displayName,
                       style: textTheme.titleMedium?.copyWith(
                         color: colorScheme.onSurface,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      loggedIn
-                          ? (email.isNotEmpty ? email : '已登录，点击管理账号')
-                          : '登录、注册与赞助用户状态',
+                      subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: textTheme.bodyMedium?.copyWith(

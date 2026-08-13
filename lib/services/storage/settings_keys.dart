@@ -470,6 +470,16 @@ class SettingsKeys {
     '',
     group: SettingGroup.misc,
   );
+  static const authIsAdmin = SettingKey<int>(
+    'authIsAdmin',
+    0,
+    group: SettingGroup.misc,
+  );
+  static const authUserId = SettingKey<int>(
+    'authUserId',
+    0,
+    group: SettingGroup.misc,
+  );
   // YunXiHub 云同步（历史/追番，登录账号或游客设备均可，默认开启）
   static const cloudHistorySyncEnable = SettingKey<bool>(
     'cloudHistorySyncEnable',

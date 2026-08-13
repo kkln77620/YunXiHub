@@ -42,6 +42,11 @@ class AuthService {
   String get nickname => GStorage.getSetting(SettingsKeys.authNickname);
   String get avatar => GStorage.getSetting(SettingsKeys.authAvatar);
   String get inviteCode => GStorage.getSetting(SettingsKeys.authInviteCode);
+  bool get isAdmin =>
+      GStorage.getSetting(SettingsKeys.authIsAdmin) == 1;
+
+  /// 当前登录用户 ID（服务器返回，用于判断“我的评论”），0 表示未知
+  int get userId => GStorage.getSetting(SettingsKeys.authUserId);
 
   /// 发送验证码：purpose = register（注册）| reset（重置密码）
   Future<String> sendCode(String email, {String purpose = 'register'}) async {
@@ -109,26 +114,7 @@ class AuthService {
           : (raw as Map).cast<String, dynamic>();
       if (map['code'] == 0 && map['data'] is Map) {
         final user = map['data'] as Map;
-        await GStorage.putSetting(
-          SettingsKeys.authVipLevel,
-          (user['vip_level'] as num?)?.toInt() ?? 0,
-        );
-        await GStorage.putSetting(
-          SettingsKeys.authVipExpire,
-          user['vip_expire']?.toString() ?? '',
-        );
-        await GStorage.putSetting(
-          SettingsKeys.authNickname,
-          user['nickname']?.toString() ?? '',
-        );
-        await GStorage.putSetting(
-          SettingsKeys.authAvatar,
-          user['avatar']?.toString() ?? '',
-        );
-        await GStorage.putSetting(
-          SettingsKeys.authInviteCode,
-          user['invite_code']?.toString() ?? '',
-        );
+        await _applyUserInfo(user);
       }
     } catch (_) {
       // 静默失败：离线时不影响使用
@@ -144,6 +130,40 @@ class AuthService {
     await GStorage.putSetting(SettingsKeys.authNickname, '');
     await GStorage.putSetting(SettingsKeys.authAvatar, '');
     await GStorage.putSetting(SettingsKeys.authInviteCode, '');
+    await GStorage.putSetting(SettingsKeys.authIsAdmin, 0);
+    await GStorage.putSetting(SettingsKeys.authUserId, 0);
+  }
+
+  /// 持久化服务器返回的 user 信息（登录/刷新/改资料共用）
+  Future<void> _applyUserInfo(Map<String, dynamic> user) async {
+    await GStorage.putSetting(
+      SettingsKeys.authVipLevel,
+      (user['vip_level'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authVipExpire,
+      user['vip_expire']?.toString() ?? '',
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authNickname,
+      user['nickname']?.toString() ?? '',
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authAvatar,
+      user['avatar']?.toString() ?? '',
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authInviteCode,
+      user['invite_code']?.toString() ?? '',
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authIsAdmin,
+      (user['is_admin'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authUserId,
+      (user['id'] as num?)?.toInt() ?? 0,
+    );
   }
 
   /// 更新资料（昵称/头像），成功返回新资料；失败抛 [AuthException]
@@ -170,15 +190,7 @@ class AuthService {
         throw AuthException(map['msg']?.toString() ?? '更新失败');
       }
       if (map['data'] is Map) {
-        final user = map['data'] as Map;
-        await GStorage.putSetting(
-          SettingsKeys.authNickname,
-          user['nickname']?.toString() ?? '',
-        );
-        await GStorage.putSetting(
-          SettingsKeys.authAvatar,
-          user['avatar']?.toString() ?? '',
-        );
+        await _applyUserInfo((map['data'] as Map).cast<String, dynamic>());
       }
       return map['data'] is Map ? (map['data'] as Map).cast<String, dynamic>() : {};
     } on DioException catch (e) {
@@ -237,26 +249,7 @@ class AuthService {
         SettingsKeys.authEmail,
         user['email']?.toString() ?? '',
       );
-      await GStorage.putSetting(
-        SettingsKeys.authVipLevel,
-        (user['vip_level'] as num?)?.toInt() ?? 0,
-      );
-      await GStorage.putSetting(
-        SettingsKeys.authVipExpire,
-        user['vip_expire']?.toString() ?? '',
-      );
-      await GStorage.putSetting(
-        SettingsKeys.authNickname,
-        user['nickname']?.toString() ?? '',
-      );
-      await GStorage.putSetting(
-        SettingsKeys.authAvatar,
-        user['avatar']?.toString() ?? '',
-      );
-      await GStorage.putSetting(
-        SettingsKeys.authInviteCode,
-        user['invite_code']?.toString() ?? '',
-      );
+      await _applyUserInfo(user.cast<String, dynamic>());
     }
     // 登录/注册成功即同步历史记录，并把游客设备数据并入账号（失败静默）
     unawaited(HistorySyncService.instance.syncNow());

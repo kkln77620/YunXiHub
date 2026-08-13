@@ -10,24 +10,36 @@ class CommunityComment {
   final int id;
   final String kind;
   final int targetId;
+  final int parentId;
+  final int userId;
   final String nickname;
   final String avatar;
   final String content;
   final List<String> images;
   final bool spoiler;
   final bool isSponsor;
+  final int likeCount;
+  final int replyCount;
+  final int reportCount;
+  final bool likedByMe;
   final String createdAt;
 
   const CommunityComment({
     required this.id,
     required this.kind,
     required this.targetId,
+    required this.parentId,
+    required this.userId,
     required this.nickname,
     required this.avatar,
     required this.content,
     required this.images,
     required this.spoiler,
     required this.isSponsor,
+    required this.likeCount,
+    required this.replyCount,
+    required this.reportCount,
+    required this.likedByMe,
     required this.createdAt,
   });
 
@@ -36,6 +48,8 @@ class CommunityComment {
       id: (j['id'] as num?)?.toInt() ?? 0,
       kind: j['kind']?.toString() ?? 'subject',
       targetId: (j['target_id'] as num?)?.toInt() ?? 0,
+      parentId: (j['parent_id'] as num?)?.toInt() ?? 0,
+      userId: (j['user_id'] as num?)?.toInt() ?? 0,
       nickname: j['nickname']?.toString() ?? '',
       avatar: j['avatar']?.toString() ?? '',
       content: j['content']?.toString() ?? '',
@@ -44,9 +58,51 @@ class CommunityComment {
       ],
       spoiler: (j['spoiler'] as num?)?.toInt() == 1,
       isSponsor: (j['is_sponsor'] as num?)?.toInt() == 1,
+      likeCount: (j['like_count'] as num?)?.toInt() ?? 0,
+      replyCount: (j['reply_count'] as num?)?.toInt() ?? 0,
+      reportCount: (j['report_count'] as num?)?.toInt() ?? 0,
+      likedByMe: (j['liked_by_me'] as num?)?.toInt() == 1,
       createdAt: j['created_at']?.toString() ?? '',
     );
   }
+
+  CommunityComment copyWith({
+    int? likeCount,
+    bool? likedByMe,
+    int? replyCount,
+  }) {
+    return CommunityComment(
+      id: id,
+      kind: kind,
+      targetId: targetId,
+      parentId: parentId,
+      userId: userId,
+      nickname: nickname,
+      avatar: avatar,
+      content: content,
+      images: images,
+      spoiler: spoiler,
+      isSponsor: isSponsor,
+      likeCount: likeCount ?? this.likeCount,
+      replyCount: replyCount ?? this.replyCount,
+      reportCount: reportCount,
+      likedByMe: likedByMe ?? this.likedByMe,
+      createdAt: createdAt,
+    );
+  }
+}
+
+/// 社区评论排序方式
+enum CommunitySort {
+  hotDesc('hot_desc', '热度高→低'),
+  hotAsc('hot_asc', '热度低→高'),
+  timeDesc('time_desc', '时间新→旧'),
+  timeAsc('time_asc', '时间旧→新');
+
+  const CommunitySort(this.value, this.label);
+
+  final String value;
+  final String label;
 }
 
 /// YunXiHub 社区评论服务（自建评论库，游客可读，登录可发）
@@ -69,9 +125,12 @@ class CommunityCommentsService {
       GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
 
   /// 拉取评论列表（游客可读）
+  /// [parentId] 为 0 时拉主评论；>0 时拉某条评论的回复
   Future<({List<CommunityComment> items, int total})> list({
     required String kind,
     required int targetId,
+    int parentId = 0,
+    CommunitySort sort = CommunitySort.hotDesc,
     int offset = 0,
     int limit = 20,
   }) async {
@@ -80,6 +139,8 @@ class CommunityCommentsService {
       queryParameters: {
         'kind': kind,
         'target_id': targetId,
+        if (parentId > 0) 'parent_id': parentId,
+        'sort': sort.value,
         'offset': offset,
         'limit': limit,
       },
@@ -100,13 +161,14 @@ class CommunityCommentsService {
     );
   }
 
-  /// 发表评论（需登录）
+  /// 发表评论/回复（需登录）
   Future<void> post({
     required String kind,
     required int targetId,
     required String content,
     List<String> images = const [],
     bool spoiler = false,
+    int parentId = 0,
   }) async {
     if (!_loggedIn) {
       throw Exception('请先登录账号');
@@ -119,6 +181,7 @@ class CommunityCommentsService {
         'content': content,
         'images': images,
         'spoiler': spoiler,
+        if (parentId > 0) 'parent_id': parentId,
       },
     );
     final raw = response.data;
@@ -127,6 +190,64 @@ class CommunityCommentsService {
         : (raw as Map).cast<String, dynamic>();
     if (data['code'] != 0) {
       throw Exception(data['msg']?.toString() ?? '评论失败');
+    }
+  }
+
+  /// 点赞/取消点赞（需登录），返回最新 (liked, likeCount)
+  Future<({bool liked, int likeCount})> like(int commentId) async {
+    if (!_loggedIn) {
+      throw Exception('请先登录账号');
+    }
+    final response = await _dio.post<dynamic>(
+      '$_baseUrl/api/comments/like',
+      data: {'comment_id': commentId},
+    );
+    final raw = response.data;
+    final data = raw is String
+        ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+        : (raw as Map).cast<String, dynamic>();
+    if (data['code'] != 0) {
+      throw Exception(data['msg']?.toString() ?? '操作失败');
+    }
+    return (
+      liked: (data['liked'] as num?)?.toInt() == 1,
+      likeCount: (data['like_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// 举报评论（需登录）
+  Future<void> report(int commentId) async {
+    if (!_loggedIn) {
+      throw Exception('请先登录账号');
+    }
+    final response = await _dio.post<dynamic>(
+      '$_baseUrl/api/comments/report',
+      data: {'comment_id': commentId},
+    );
+    final raw = response.data;
+    final data = raw is String
+        ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+        : (raw as Map).cast<String, dynamic>();
+    if (data['code'] != 0) {
+      throw Exception(data['msg']?.toString() ?? '举报失败');
+    }
+  }
+
+  /// 删除评论（本人或管理员）
+  Future<void> delete(int commentId) async {
+    if (!_loggedIn) {
+      throw Exception('请先登录账号');
+    }
+    final response = await _dio.post<dynamic>(
+      '$_baseUrl/api/comments/delete',
+      data: {'comment_id': commentId},
+    );
+    final raw = response.data;
+    final data = raw is String
+        ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+        : (raw as Map).cast<String, dynamic>();
+    if (data['code'] != 0) {
+      throw Exception(data['msg']?.toString() ?? '删除失败');
     }
   }
 

@@ -1,15 +1,19 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/custom_dropdown_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/pages/messages/messages_page.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/remote/messages_service.dart';
+import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/bean/appbar/drag_to_move_bar.dart' as dtb;
 import 'package:kazumi/utils/device.dart';
@@ -33,6 +37,9 @@ class _PopularPageState extends State<PopularPage> {
   // Key used to position the dropdown menu for the tag selector
   final GlobalKey selectorKey = GlobalKey();
 
+  /// 未读消息数（主页右上角信封红点）
+  int _unreadCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -43,6 +50,45 @@ class _PopularPageState extends State<PopularPage> {
     if (popularController.trendList.isEmpty) {
       popularController.queryBangumiByTrend();
     }
+    _refreshUnread();
+  }
+
+  /// 拉取未读消息数（未登录时忽略）
+  Future<void> _refreshUnread() async {
+    final loggedIn =
+        GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
+    if (!loggedIn) {
+      if (mounted && _unreadCount != 0) {
+        setState(() => _unreadCount = 0);
+      }
+      return;
+    }
+    try {
+      final result = await MessagesService.instance.list(
+        type: MessageType.all,
+        limit: 1,
+      );
+      if (mounted && result.unreadCount != _unreadCount) {
+        setState(() => _unreadCount = result.unreadCount);
+      }
+    } catch (_) {
+      // 静默
+    }
+  }
+
+  /// 打开消息中心，返回后刷新未读数
+  Future<void> _openMessages() async {
+    final loggedIn =
+        GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
+    if (!loggedIn) {
+      KazumiDialog.showToast(message: '请先登录账号');
+      await context.pushNamed('/settings/account/');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MessagesPage()),
+    );
+    _refreshUnread();
   }
 
   @override
@@ -238,6 +284,18 @@ class _PopularPageState extends State<PopularPage> {
           onPressed: () => context.pushNamed('/search/'),
           icon: const Icon(Icons.search),
         ),
+      IconButton(
+        tooltip: '消息',
+        onPressed: _openMessages,
+        icon: Badge(
+          isLabelVisible: _unreadCount > 0,
+          label: Text(
+            _unreadCount > 99 ? '99+' : '$_unreadCount',
+            style: const TextStyle(fontSize: 10),
+          ),
+          child: const Icon(Icons.mail_outline_rounded),
+        ),
+      ),
     ];
     actions.add(
       IconButton(
