@@ -40,6 +40,7 @@ class AppMessage {
   });
 
   factory AppMessage.fromJson(Map<String, dynamic> j) {
+    final isReadRaw = j['is_read'];
     return AppMessage(
       id: (j['id'] as num?)?.toInt() ?? 0,
       type: j['type']?.toString() ?? 'like',
@@ -47,7 +48,7 @@ class AppMessage {
       actorNickname: j['actor_nickname']?.toString() ?? '',
       commentId: (j['comment_id'] as num?)?.toInt() ?? 0,
       content: j['content']?.toString() ?? '',
-      isRead: (j['is_read'] as num?)?.toInt() == 1,
+      isRead: isReadRaw == true || (isReadRaw as num?)?.toInt() == 1,
       createdAt: j['created_at']?.toString() ?? '',
     );
   }

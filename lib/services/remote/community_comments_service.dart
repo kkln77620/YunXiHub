@@ -45,26 +45,48 @@ class CommunityComment {
 
   factory CommunityComment.fromJson(Map<String, dynamic> j) {
     return CommunityComment(
-      id: (j['id'] as num?)?.toInt() ?? 0,
+      id: _toInt(j['id']),
       kind: j['kind']?.toString() ?? 'subject',
-      targetId: (j['target_id'] as num?)?.toInt() ?? 0,
-      parentId: (j['parent_id'] as num?)?.toInt() ?? 0,
-      userId: (j['user_id'] as num?)?.toInt() ?? 0,
+      targetId: _toInt(j['target_id']),
+      parentId: _toInt(j['parent_id']),
+      userId: _toInt(j['user_id']),
       nickname: j['nickname']?.toString() ?? '',
       avatar: j['avatar']?.toString() ?? '',
       content: j['content']?.toString() ?? '',
-      images: [
-        for (final i in (j['images'] as List?) ?? <dynamic>[]) i.toString()
-      ],
-      spoiler: (j['spoiler'] as num?)?.toInt() == 1,
-      isSponsor: (j['is_sponsor'] as num?)?.toInt() == 1,
-      likeCount: (j['like_count'] as num?)?.toInt() ?? 0,
-      replyCount: (j['reply_count'] as num?)?.toInt() ?? 0,
-      reportCount: (j['report_count'] as num?)?.toInt() ?? 0,
-      likedByMe: j['liked_by_me'] == true ||
-          (j['liked_by_me'] as num?)?.toInt() == 1,
+      images: _toStrList(j['images']),
+      spoiler: _toBool(j['spoiler']),
+      isSponsor: _toBool(j['is_sponsor']),
+      likeCount: _toInt(j['like_count']),
+      replyCount: _toInt(j['reply_count']),
+      reportCount: _toInt(j['report_count']),
+      likedByMe: _toBool(j['liked_by_me']),
       createdAt: j['created_at']?.toString() ?? '',
     );
+  }
+
+  /// 兼容数字/字符串/布尔 → int
+  static int _toInt(dynamic v) {
+    if (v is num) return v.toInt();
+    if (v is bool) return v ? 1 : 0;
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  /// 兼容数字/布尔/字符串 → bool
+  static bool _toBool(dynamic v) {
+    if (v is bool) return v;
+    if (v is num) return v.toInt() == 1;
+    return v?.toString() == '1' || v?.toString() == 'true';
+  }
+
+  /// 兼容 List / 字符串 / null → List<String>
+  static List<String> _toStrList(dynamic v) {
+    if (v is List) {
+      return [for (final i in v) i.toString()];
+    }
+    if (v is String && v.trim().isNotEmpty) {
+      return [v];
+    }
+    return const <String>[];
   }
 
   CommunityComment copyWith({
