@@ -162,6 +162,64 @@ class CommunityCommentsService {
   static final Map<String, ({List<CommunityComment> items, int total})> _cache =
       {};
 
+  /// ---- 剧透展开状态（全局静态，跨视图实例保留）----
+  /// 解决 a/b 区（bangumi/社区）切换或视图重建后剧透重新隐藏的问题
+  static final Map<int, bool> revealedSpoilers = {};
+
+  /// 读取某评论的剧透展开状态
+  static bool isSpoilerRevealed(int commentId) =>
+      revealedSpoilers[commentId] ?? false;
+
+  /// 设置剧透展开状态
+  static void setSpoilerRevealed(int commentId, bool revealed) {
+    revealedSpoilers[commentId] = revealed;
+  }
+
+  /// 构造本地评论对象（发表成功后的乐观插入，不触发刷新）
+  /// [id] 为服务器返回的新评论 id；其余字段用本地登录信息
+  static CommunityComment buildLocalComment({
+    required int id,
+    required String kind,
+    required int targetId,
+    int parentId = 0,
+    required String content,
+    List<String> images = const [],
+    bool spoiler = false,
+    String? createdAt,
+  }) {
+    final nickname =
+        GStorage.getSetting(SettingsKeys.authNickname).trim();
+    final avatar = GStorage.getSetting(SettingsKeys.authAvatar).trim();
+    return CommunityComment(
+      id: id,
+      kind: kind,
+      targetId: targetId,
+      parentId: parentId,
+      userId: AuthService.instance.userId,
+      nickname: nickname.isEmpty ? '我' : nickname,
+      avatar: avatar,
+      content: content,
+      images: images,
+      spoiler: spoiler,
+      isSponsor: AuthService.instance.vipLevel > 0,
+      title: AuthService.instance.title == '普通用户' ? '' : AuthService.instance.title,
+      likeCount: 0,
+      replyCount: 0,
+      reportCount: 0,
+      likedByMe: false,
+      createdAt: createdAt ??
+          _nowLocal(),
+    );
+  }
+
+  /// 本地时间 yyyy-MM-dd HH:mm:ss（与服务器格式一致）
+  static String _nowLocal() {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${now.year}-${two(now.month)}-${two(now.day)} '
+        '${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
+  }
+
   static String _cacheKey(String kind, int targetId, CommunitySort sort) =>
       '$kind:$targetId:${sort.value}';
 
@@ -246,6 +304,39 @@ class CommunityCommentsService {
       cacheStore(kind, targetId, sort, items, total);
     }
     return (items: items, total: total);
+  }
+
+  /// 发表评论/回复（需登录），返回新评论 id（乐观插入用）
+  Future<int> postReturnId({
+    required String kind,
+    required int targetId,
+    required String content,
+    List<String> images = const [],
+    bool spoiler = false,
+    int parentId = 0,
+  }) async {
+    if (!_loggedIn) {
+      throw Exception('请先登录账号');
+    }
+    final response = await _dio.post<dynamic>(
+      '$_baseUrl/api/comments/post',
+      data: {
+        'kind': kind,
+        'target_id': targetId,
+        'content': content,
+        'images': images,
+        'spoiler': spoiler,
+        if (parentId > 0) 'parent_id': parentId,
+      },
+    );
+    final raw = response.data;
+    final data = raw is String
+        ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+        : (raw as Map).cast<String, dynamic>();
+    if (data['code'] != 0) {
+      throw Exception(data['msg']?.toString() ?? '评论失败');
+    }
+    return (data['id'] as num?)?.toInt() ?? 0;
   }
 
   /// 发表评论/回复（需登录）

@@ -140,7 +140,7 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       ),
     );
-    if (mounted) _refresh();
+    // 不自动刷新：消息列表保持缓存，手动下拉刷新才更新
   }
 
   Future<void> _openTypePage(MessageType type) async {
@@ -156,7 +156,7 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       ),
     );
-    if (mounted) _refresh();
+    // 不自动刷新：消息列表保持缓存，手动下拉刷新才更新
   }
 
   @override
