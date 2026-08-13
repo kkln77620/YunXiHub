@@ -331,44 +331,50 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            commentsInfo,
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-              child: SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(
-                    value: 0,
-                    label: Text('Bangumi 评论'),
-                    icon: Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                  ),
-                  ButtonSegment(
-                    value: 1,
-                    label: Text('社区评论'),
-                    icon: Icon(Icons.forum_outlined, size: 16),
-                  ),
-                ],
-                selected: {_commentSource},
-                onSelectionChanged: (s) =>
-                    setState(() => _commentSource = s.first),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                ),
+    // 外层 RefreshIndicator 仅供 a 区（Bangumi 评论）使用；
+    // b 区（社区评论）自带下拉刷新，避免双刷新图标重叠
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        commentsInfo,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 0,
+                label: Text('Bangumi 评论'),
+                icon: Icon(Icons.chat_bubble_outline_rounded, size: 16),
               ),
+              ButtonSegment(
+                value: 1,
+                label: Text('社区评论'),
+                icon: Icon(Icons.forum_outlined, size: 16),
+              ),
+            ],
+            selected: {_commentSource},
+            onSelectionChanged: (s) =>
+                setState(() => _commentSource = s.first),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
             ),
-            Expanded(child: episodeCommentsBody),
-          ],
+          ),
         ),
-        onRefresh: () async {
-          await loadComments(ep == 0 ? widget.episode : ep);
-        },
-      ),
+        Expanded(child: episodeCommentsBody),
+      ],
     );
+    if (_commentSource == 0) {
+      return Scaffold(
+        body: RefreshIndicator(
+          key: _refreshIndicatorKey,
+          child: body,
+          onRefresh: () async {
+            await loadComments(ep == 0 ? widget.episode : ep);
+          },
+        ),
+      );
+    }
+    return Scaffold(body: body);
   }
 }

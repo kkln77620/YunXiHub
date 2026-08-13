@@ -84,8 +84,11 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
         type: MessageType.all,
         limit: 1,
       );
-      if (mounted && result.unreadCount != _unreadCount) {
-        setState(() => _unreadCount = result.unreadCount);
+      if (mounted) {
+        final badge = MessagesService.badgeUnread(result.unreadCount);
+        if (badge != _unreadCount) {
+          setState(() => _unreadCount = badge);
+        }
       }
     } catch (_) {
       // 静默

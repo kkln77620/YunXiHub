@@ -66,6 +66,17 @@ class MessagesService {
 
   static final MessagesService instance = MessagesService._();
 
+  /// 已读水位：进入消息页时记录的服务器未读数。
+  /// 主页图标显示 `服务器未读 - 水位`（看完消息后图标数字消失，
+  /// 但消息列表内未读红点保留；新消息到达后数字重新出现）。
+  static int viewedUnread = 0;
+
+  /// 主页图标应显示的未读数
+  static int badgeUnread(int serverUnread) {
+    final v = serverUnread - viewedUnread;
+    return v < 0 ? 0 : v;
+  }
+
   String get _baseUrl {
     var base =
         GStorage.getSetting(SettingsKeys.remoteResolverBaseUrl).trim();

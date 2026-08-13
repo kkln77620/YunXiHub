@@ -22,6 +22,9 @@ class _MessagesPageState extends State<MessagesPage> {
   final Map<MessageType, bool> _error = {};
   int _unreadCount = 0;
 
+  /// 已读水位是否已记录（进入消息页首次加载时记一次）
+  bool _baselineSet = false;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +45,13 @@ class _MessagesPageState extends State<MessagesPage> {
         _unreadCount = result.unreadCount;
         _loading[type] = false;
       });
+      // 进入消息页首次加载成功：记录已读水位
+      // （主页图标数字 = 服务器未读 - 水位 → 看完消息后图标数字消失，
+      //   消息列表内未读红点保留；新消息到达后数字重新出现）
+      if (!_baselineSet) {
+        _baselineSet = true;
+        MessagesService.viewedUnread = result.unreadCount;
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {

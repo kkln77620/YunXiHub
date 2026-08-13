@@ -14,12 +14,16 @@ import 'package:kazumi/services/storage/storage.dart';
 
 /// YunXiHub 社区评论视图（b 区）
 ///
-/// v2 特性：
+/// v3 特性：
 /// - 一级评论缓存：切换界面不重复请求；退出视频页 / 下拉刷新 / 排序切换才重新加载
 /// - 一级列表统一分页加载（每次 20 条）
-/// - 回复随主评论一并返回（不再逐条请求），B 被评论时折叠区直接显示
-/// - 回复二级页改为底部弹层（只占评论区，不再全屏）
-/// - 剧透内容：文字/图片高度模糊（非隐藏），点击显示；展开状态页面级持久（滚动不丢）
+/// - 回复随主评论一并返回；B 被 C 回复时折叠区直接显示（@B 昵称）
+/// - 二级页**内联展开**（对齐原版卡片风格，不弹窗）：B 转 A 展示 + C 列表，
+///   C 有回复时可再内联展开（循环二级页）
+/// - 主评论无"查看详情"按钮；折叠区回复行 / 二级页 C 行按需展开
+/// - 剧透：内容前端已加载，文字/图片高度模糊展示（非隐藏），
+///   点击整个模糊区立即清晰显示（无需重新加载）；模糊时图片不可点开原图
+/// - 剧透展开状态页面级持久（滚动不丢）
 /// - 评论显示头衔（管理员 / 赞助用户）
 class CommunityCommentsView extends StatefulWidget {
   const CommunityCommentsView({
@@ -34,10 +38,10 @@ class CommunityCommentsView extends StatefulWidget {
   final String kind;
   final int targetId;
 
-  /// 定位高亮（消息跳转用），加载后滚动到该评论并高亮
+  /// 定位高亮（消息跳转用），加载后滚动到该评论并高亮（只执行一次）
   final int? highlightCommentId;
 
-  /// 目标评论是回复时：加载后自动打开其所属主评论的二级页
+  /// 目标评论是回复时：加载后自动内联展开其所属主评论的二级页
   final int? autoOpenRepliesCommentId;
 
   @override
@@ -57,6 +61,16 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
   /// 剧透展开状态（commentId → 已显示），页面级持久，滚动重建不丢失
   final Map<int, bool> _revealedSpoilers = {};
 
+  /// 当前内联展开的二级页主评论 id（null = 全部收起）
+  int? _expandedCommentId;
+
+  /// 定位是否已执行（消息跳转只定位一次，避免退出二级页后循环）
+  bool _highlightResolved = false;
+
+  int? _highlightId;
+
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -74,8 +88,16 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     }
   }
 
-  /// 消息跳转定位：滚动到目标评论并高亮；目标是回复时自动打开二级页
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 消息跳转定位：滚动到目标评论并高亮（仅首次）
   void _locateHighlight() {
+    if (_highlightResolved) return;
+    _highlightResolved = true;
     final targetId = widget.highlightCommentId;
     if (targetId == null || _items.isEmpty) return;
     var index = _items.indexWhere((c) => c.id == targetId);
@@ -83,15 +105,13 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
       _scrollToHighlight(index);
       return;
     }
-    // 目标是回复：找到所属主评论，滚动高亮并自动打开二级页
+    // 目标是回复：找到所属主评论，滚动高亮并自动内联展开其二级页
     for (var i = 0; i < _items.length; i++) {
       final parent = _items[i];
       if (parent.replies.any((r) => r.id == targetId) ||
           parent.id == widget.autoOpenRepliesCommentId) {
         _scrollToHighlight(i);
-        Future.delayed(const Duration(milliseconds: 400), () {
-          if (mounted) _openReplies(parent);
-        });
+        setState(() => _expandedCommentId = parent.id);
         return;
       }
     }
@@ -105,8 +125,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
         final target = (index * 140.0).clamp(0.0, max);
         _scrollController.jumpTo(target);
       }
-      _highlightId = widget.highlightCommentId;
-      setState(() {});
+      setState(() => _highlightId = widget.highlightCommentId);
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _highlightId != null) {
           setState(() => _highlightId = null);
@@ -115,18 +134,8 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     });
   }
 
-  final ScrollController _scrollController = ScrollController();
-  int? _highlightId;
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
   Future<void> _load({bool refresh = false}) async {
     if (!refresh && !_loading) {
-      // 分页场景：先检查缓存（刷新时强制走网络）
       final cached = CommunityCommentsService.cached(
           widget.kind, widget.targetId, _sort);
       if (cached != null) {
@@ -152,7 +161,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
         kind: widget.kind,
         targetId: widget.targetId,
         sort: _sort,
-        offset: refresh ? 0 : 0,
+        offset: 0,
         limit: 20,
       );
       if (!mounted) return;
@@ -199,7 +208,8 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
 
   /// 主动刷新：清缓存 + 重新拉取
   Future<void> _refresh() async {
-    CommunityCommentsService.clearCache(kind: widget.kind, targetId: widget.targetId);
+    CommunityCommentsService.clearCache(
+        kind: widget.kind, targetId: widget.targetId);
     await _load(refresh: true);
   }
 
@@ -211,7 +221,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     _load(refresh: true);
   }
 
-  /// 发表/回复成功回调：清缓存并重载
+  /// 发表/回复成功回调：清缓存并重载（二级页内变更也走这里）
   Future<void> _onPosted() async {
     CommunityCommentsService.clearCache(
         kind: widget.kind, targetId: widget.targetId);
@@ -239,28 +249,19 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     );
   }
 
-  /// 打开回复二级页（底部弹层，只占评论区）
-  Future<void> _openReplies(CommunityComment comment) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      builder: (_) => FractionallySizedBox(
-        heightFactor: 0.82,
-        child: _RepliesSheet(
-          kind: widget.kind,
-          targetId: widget.targetId,
-          parent: comment,
-          revealedSpoilers: _revealedSpoilers,
-          onToggleSpoiler: _toggleSpoiler,
-        ),
-      ),
-    );
-    if (mounted) _onPosted();
+  /// 内联展开/收起二级页
+  void _toggleExpand(int commentId) {
+    setState(() {
+      _expandedCommentId =
+          _expandedCommentId == commentId ? null : commentId;
+    });
   }
 
+  /// 剧透点击：立即显示（内容已在前端，无需重新加载）
   void _toggleSpoiler(int commentId, bool revealed) {
-    _revealedSpoilers[commentId] = revealed;
+    setState(() {
+      _revealedSpoilers[commentId] = revealed;
+    });
   }
 
   @override
@@ -340,8 +341,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                           child: ListView.separated(
                             controller: _scrollController,
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                            itemCount:
-                                _items.length + (_hasMore ? 1 : 0),
+                            itemCount: _items.length + (_hasMore ? 1 : 0),
                             separatorBuilder: (_, __) =>
                                 const Divider(height: 1),
                             itemBuilder: (context, index) {
@@ -372,18 +372,19 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                                 comment: comment,
                                 kind: widget.kind,
                                 targetId: widget.targetId,
-                                highlight:
-                                    _highlightId == comment.id,
+                                highlight: _highlightId == comment.id,
                                 revealedSpoiler:
                                     _revealedSpoilers[comment.id] ?? false,
                                 onToggleSpoiler: (r) =>
                                     _toggleSpoiler(comment.id, r),
+                                expanded: _expandedCommentId == comment.id,
+                                onToggleExpand: () =>
+                                    _toggleExpand(comment.id),
                                 onChanged: _onPosted,
                                 onReply: () => _openComposer(
                                   parentId: comment.id,
                                   replyTo: comment.nickname,
                                 ),
-                                onOpenReplies: () => _openReplies(comment),
                               );
                             },
                           ),
@@ -446,7 +447,7 @@ class _TitleBadge extends StatelessWidget {
   }
 }
 
-/// 单条社区评论（含折叠回复区）
+/// 单条社区评论（含折叠回复区 + 可内联展开的二级页）
 class _CommunityCommentTile extends StatefulWidget {
   const _CommunityCommentTile({
     super.key,
@@ -455,9 +456,10 @@ class _CommunityCommentTile extends StatefulWidget {
     required this.targetId,
     required this.onChanged,
     required this.onReply,
-    required this.onOpenReplies,
     required this.revealedSpoiler,
     required this.onToggleSpoiler,
+    required this.expanded,
+    required this.onToggleExpand,
     this.highlight = false,
   });
 
@@ -466,9 +468,10 @@ class _CommunityCommentTile extends StatefulWidget {
   final int targetId;
   final VoidCallback onChanged;
   final VoidCallback onReply;
-  final VoidCallback onOpenReplies;
   final bool revealedSpoiler;
   final ValueChanged<bool> onToggleSpoiler;
+  final bool expanded;
+  final VoidCallback onToggleExpand;
   final bool highlight;
 
   @override
@@ -723,7 +726,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
             ],
           ],
           const SizedBox(height: 6),
-          // 操作行：点赞 / 回复 / 查看详情 / 更多
+          // 操作行：点赞 / 回复 / 更多（无"查看详情"）
           Row(
             children: [
               InkWell(
@@ -782,34 +785,6 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
                   ),
                 ),
               ),
-              // 点赞右侧：查看详情（有回复时）
-              if (comment.replyCount > 0)
-                InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: widget.onOpenReplies,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.forum_outlined,
-                          size: 18,
-                          color: colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '查看详情',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               const Spacer(),
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -819,7 +794,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
               ),
             ],
           ),
-          // 折叠回复区（回复随主评论返回，直接展示；B 被 C 回复时 C 显示 @B）
+          // 折叠回复区（回复随主评论返回；B 被 C 回复时 C 显示 @B）
           if (replies.isNotEmpty || comment.replyCount > 0) ...[
             const SizedBox(height: 4),
             Container(
@@ -833,17 +808,22 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   for (final reply in replies) ...[
-                    _ReplyLine(comment: reply, onTap: widget.onOpenReplies),
+                    _ReplyLine(
+                      comment: reply,
+                      onTap: widget.onToggleExpand,
+                    ),
                     if (reply != replies.last) const SizedBox(height: 4),
                   ],
                   if (comment.replyCount > replies.length)
                     InkWell(
-                      onTap: widget.onOpenReplies,
+                      onTap: widget.onToggleExpand,
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Text(
-                          '查看全部 ${comment.replyCount} 条回复',
+                          widget.expanded
+                              ? '收起回复'
+                              : '查看全部 ${comment.replyCount} 条回复',
                           style: theme.textTheme.labelMedium?.copyWith(
                             color: colorScheme.primary,
                           ),
@@ -852,6 +832,19 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
                     ),
                 ],
               ),
+            ),
+          ],
+          // 内联二级页（B 转 A + C 列表；仅展开时显示，不弹窗）
+          if (widget.expanded) ...[
+            const SizedBox(height: 4),
+            _InlineReplies(
+              key: ValueKey('inline-${comment.id}'),
+              kind: widget.kind,
+              targetId: widget.targetId,
+              parent: comment,
+              revealedSpoilers: widget.revealedSpoilers,
+              onToggleSpoiler: (id, r) => widget.onToggleSpoiler(r),
+              onChanged: widget.onChanged,
             ),
           ],
         ],
@@ -872,7 +865,8 @@ class _ReplyLine extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final name = comment.nickname.isEmpty ? '游客' : comment.nickname;
-    final parentName = comment.parentNickname.isEmpty ? '' : comment.parentNickname;
+    final parentName =
+        comment.parentNickname.isEmpty ? '' : comment.parentNickname;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
@@ -912,11 +906,12 @@ class _ReplyLine extends StatelessWidget {
   }
 }
 
-/// 评论图片（点击放大；剧透时由外层模糊包裹）
+/// 评论图片（点击放大；剧透模糊时 enabled=false 禁止点开原图）
 class _CommentImages extends StatelessWidget {
-  const _CommentImages({required this.images});
+  const _CommentImages({required this.images, this.enabled = true});
 
   final List<String> images;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -931,11 +926,13 @@ class _CommentImages extends StatelessWidget {
       children: [
         for (var i = 0; i < urls.length; i++)
           GestureDetector(
-            onTap: () => ImageViewer.show(
-              context,
-              imageUrls: urls,
-              initialIndex: i,
-            ),
+            onTap: enabled
+                ? () => ImageViewer.show(
+                      context,
+                      imageUrls: urls,
+                      initialIndex: i,
+                    )
+                : null,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
@@ -957,8 +954,7 @@ class _CommentImages extends StatelessWidget {
   }
 }
 
-/// 剧透内容：文字 + 图片高度模糊展示（非隐藏），点击后清晰
-/// revealed 状态由页面级持有，滚动重建不会重新隐藏
+/// 剧透内容：前端已加载，仅模糊展示；点击**整个模糊区**立即清晰（无需重新加载）
 class _SpoilerContent extends StatelessWidget {
   const _SpoilerContent({
     required this.comment,
@@ -986,6 +982,7 @@ class _SpoilerContent extends StatelessWidget {
         ],
       );
     }
+    // 整个模糊区可点击（含文字 + 图片区域），点击立即显示
     return GestureDetector(
       onTap: onReveal,
       behavior: HitTestBehavior.opaque,
@@ -1028,10 +1025,10 @@ class _SpoilerContent extends StatelessWidget {
             ],
             if (comment.images.isNotEmpty) ...[
               const SizedBox(height: 6),
-              // 图片高度模糊
+              // 图片高度模糊 + 禁止点击原图
               ImageFiltered(
                 imageFilter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
-                child: _CommentImages(images: comment.images),
+                child: _CommentImages(images: comment.images, enabled: false),
               ),
             ],
           ],
@@ -1041,27 +1038,31 @@ class _SpoilerContent extends StatelessWidget {
   }
 }
 
-/// 回复二级页（底部弹层）：B 转为主评论置顶，C 们作为回复列表（带 @B 昵称）
-class _RepliesSheet extends StatefulWidget {
-  const _RepliesSheet({
+/// 内联二级页：B 转为主评论置顶，C 们作为回复列表（带 @B 昵称）
+/// 在评论卡片内就地展开（对齐原版评论卡片风格），支持循环嵌套
+class _InlineReplies extends StatefulWidget {
+  const _InlineReplies({
+    super.key,
     required this.kind,
     required this.targetId,
     required this.parent,
     required this.revealedSpoilers,
     required this.onToggleSpoiler,
+    required this.onChanged,
   });
 
   final String kind;
   final int targetId;
-  final CommunityComment parent; // B
+  final CommunityComment parent; // B（展开时转 A 置顶）
   final Map<int, bool> revealedSpoilers;
-  final void Function(int, bool) onToggleSpoiler;
+  final void Function(int commentId, bool revealed) onToggleSpoiler;
+  final VoidCallback onChanged;
 
   @override
-  State<_RepliesSheet> createState() => _RepliesSheetState();
+  State<_InlineReplies> createState() => _InlineRepliesState();
 }
 
-class _RepliesSheetState extends State<_RepliesSheet> {
+class _InlineRepliesState extends State<_InlineReplies> {
   List<CommunityComment> _replies = []; // C 们
   bool _loading = true;
   bool _error = false;
@@ -1145,7 +1146,10 @@ class _RepliesSheetState extends State<_RepliesSheet> {
         targetId: widget.targetId,
         parentId: parentId > 0 ? parentId : widget.parent.id,
         replyTo: replyTo,
-        onPosted: _load,
+        onPosted: () {
+          widget.onChanged();
+          _load();
+        },
       ),
     );
   }
@@ -1156,187 +1160,171 @@ class _RepliesSheetState extends State<_RepliesSheet> {
     final colorScheme = theme.colorScheme;
     final parent = widget.parent;
     final parentName = parent.nickname.isEmpty ? '游客' : parent.nickname;
-    return Column(
-      children: [
-        // 拖拽把手
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          width: 36,
-          height: 4,
-          decoration: BoxDecoration(
-            color: colorScheme.outlineVariant,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        // 标题：B 的回复
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${parentName} 的回复${_total > 0 ? '（$_total）' : ''}',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.close_rounded, size: 20),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        // B 转 A 置顶（剧透也模糊）
-        Container(
-          width: double.infinity,
-          color: colorScheme.surfaceContainerLow,
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    backgroundImage: parent.avatar.isNotEmpty
-                        ? NetworkImage(
-                            CommunityCommentsService.instance
-                                .resolveUrl(parent.avatar))
-                        : null,
-                    child: parent.avatar.isEmpty
-                        ? const Icon(Icons.person_rounded, size: 14)
-                        : null,
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      parentName,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outlineVariant, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // B 转 A 置顶（剧透也模糊）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      backgroundImage: parent.avatar.isNotEmpty
+                          ? NetworkImage(
+                              CommunityCommentsService.instance
+                                  .resolveUrl(parent.avatar))
+                          : null,
+                      child: parent.avatar.isEmpty
+                          ? const Icon(Icons.person_rounded, size: 14)
+                          : null,
                     ),
-                  ),
-                  if (parent.title.isNotEmpty) ...[
                     const SizedBox(width: 6),
-                    _TitleBadge(title: parent.title),
-                  ],
-                  const Spacer(),
-                  Text(
-                    parent.createdAt.length >= 16
-                        ? parent.createdAt.substring(5, 16)
-                        : parent.createdAt,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                    Flexible(
+                      child: Text(
+                        parentName,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              if (parent.spoiler)
-                _SpoilerContent(
-                  comment: parent,
-                  revealed: widget.revealedSpoilers[parent.id] ?? false,
-                  onReveal: () => widget.onToggleSpoiler(parent.id, true),
-                )
-              else ...[
-                Text(parent.content),
-                if (parent.images.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _CommentImages(images: parent.images),
+                    if (parent.title.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _TitleBadge(title: parent.title),
+                    ],
+                    const Spacer(),
+                    Text(
+                      parent.createdAt.length >= 16
+                          ? parent.createdAt.substring(5, 16)
+                          : parent.createdAt,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (parent.spoiler)
+                  _SpoilerContent(
+                    comment: parent,
+                    revealed: widget.revealedSpoilers[parent.id] ?? false,
+                    onReveal: () =>
+                        widget.onToggleSpoiler(parent.id, true),
+                  )
+                else ...[
+                  Text(parent.content),
+                  if (parent.images.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _CommentImages(images: parent.images),
+                  ],
                 ],
               ],
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : _error
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('回复加载失败'),
-                          const SizedBox(height: 8),
-                          FilledButton.tonal(
-                            onPressed: _load,
-                            child: const Text('重试'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _replies.isEmpty
-                      ? const Center(child: Text('还没有回复，来抢沙发吧'))
-                      : ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          itemCount: _replies.length + (_hasMore ? 1 : 0),
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1, indent: 56),
-                          itemBuilder: (context, index) {
-                            if (index >= _replies.length) {
-                              return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                child: Center(
-                                  child: _loadingMore
-                                      ? const SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : TextButton(
-                                          onPressed: _loadMore,
-                                          child: const Text('加载更多'),
-                                        ),
-                                ),
-                              );
-                            }
-                            final reply = _replies[index];
-                            return _ReplyTile(
-                              key: ValueKey(reply.id),
-                              comment: reply,
-                              kind: widget.kind,
-                              targetId: widget.targetId,
-                              revealedSpoiler:
-                                  widget.revealedSpoilers[reply.id] ?? false,
-                              onToggleSpoiler: (r) =>
-                                  widget.onToggleSpoiler(reply.id, r),
-                              onChanged: _load,
-                              onReply: () => _openComposer(
-                                parentId: reply.id,
-                                replyTo: reply.nickname,
-                              ),
-                            );
-                          },
-                        ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: FilledButton.icon(
-              onPressed: () => _openComposer(),
-              icon: const Icon(Icons.reply_rounded),
-              label: Text('回复 $parentName'),
             ),
           ),
-        ),
-      ],
+          const Divider(height: 1, indent: 12, endIndent: 12),
+          // C 们列表
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('回复加载失败'),
+                    const SizedBox(height: 8),
+                    FilledButton.tonal(
+                      onPressed: _load,
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (_replies.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: Text('还没有回复，来抢沙发吧')),
+            )
+          else ...[
+            for (var i = 0; i < _replies.length; i++) ...[
+              _ReplyTile(
+                key: ValueKey(_replies[i].id),
+                comment: _replies[i],
+                kind: widget.kind,
+                targetId: widget.targetId,
+                revealedSpoiler:
+                    widget.revealedSpoilers[_replies[i].id] ?? false,
+                onToggleSpoiler: (r) =>
+                    widget.onToggleSpoiler(_replies[i].id, r),
+                onChanged: () {
+                  widget.onChanged();
+                  _load();
+                },
+                onReply: () => _openComposer(
+                  parentId: _replies[i].id,
+                  replyTo: _replies[i].nickname,
+                ),
+              ),
+              if (i < _replies.length - 1)
+                const Divider(height: 1, indent: 56),
+            ],
+            if (_hasMore)
+              Center(
+                child: _loadingMore
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : TextButton(
+                        onPressed: _loadMore,
+                        child: const Text('加载更多回复'),
+                      ),
+              ),
+          ],
+          const Divider(height: 1, indent: 12, endIndent: 12),
+          // 回复 B 按钮
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => _openComposer(),
+                icon: const Icon(Icons.reply_rounded, size: 16),
+                label: Text('回复 $parentName'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// 二级页里的一条回复（C：显示 @B 昵称）
+/// 二级页里的一条回复（C：显示 @B 昵称；C 被回复时可再内联展开循环二级页）
 class _ReplyTile extends StatefulWidget {
   const _ReplyTile({
     super.key,
@@ -1364,6 +1352,9 @@ class _ReplyTile extends StatefulWidget {
 class _ReplyTileState extends State<_ReplyTile> {
   /// 本地可变副本（点赞乐观更新用）
   late CommunityComment _comment;
+
+  /// 本行是否内联展开（C 被回复时点"查看详情"循环展开）
+  bool _expanded = false;
 
   bool get _isMine =>
       _comment.userId > 0 && _comment.userId == AuthService.instance.userId;
@@ -1517,163 +1508,202 @@ class _ReplyTileState extends State<_ReplyTile> {
     final name = comment.nickname.isEmpty ? '游客' : comment.nickname;
     final parentName =
         comment.parentNickname.isEmpty ? '' : comment.parentNickname;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: colorScheme.surfaceContainerHighest,
-            backgroundImage: comment.avatar.isNotEmpty
-                ? NetworkImage(
-                    CommunityCommentsService.instance.resolveUrl(comment.avatar))
-                : null,
-            child: comment.avatar.isEmpty
-                ? const Icon(Icons.person_rounded, size: 14)
-                : null,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                backgroundImage: comment.avatar.isNotEmpty
+                    ? NetworkImage(
+                        CommunityCommentsService.instance
+                            .resolveUrl(comment.avatar))
+                    : null,
+                child: comment.avatar.isEmpty
+                    ? const Icon(Icons.person_rounded, size: 14)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Flexible(
-                      child: Text(
-                        name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (_isMine) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: colorScheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '我',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSecondaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (comment.title.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      _TitleBadge(title: comment.title),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // C 显示：@B昵称 + 消息
-                if (comment.spoiler)
-                  _SpoilerContent(
-                    comment: comment,
-                    revealed: widget.revealedSpoiler,
-                    onReveal: () => widget.onToggleSpoiler(true),
-                  )
-                else
-                  Text.rich(
-                    TextSpan(
+                    Row(
                       children: [
-                        if (parentName.isNotEmpty)
-                          TextSpan(
-                            text: '@$parentName ',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.primary,
+                        Flexible(
+                          child: Text(
+                            name,
+                            style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        TextSpan(
-                          text: comment.content,
-                          style: theme.textTheme.bodyMedium,
                         ),
+                        if (_isMine) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '我',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (comment.title.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          _TitleBadge(title: comment.title),
+                        ],
                       ],
                     ),
-                  ),
-                if (!comment.spoiler && comment.images.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  _CommentImages(images: comment.images),
-                ],
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      comment.createdAt.length >= 16
-                          ? comment.createdAt.substring(5, 16)
-                          : comment.createdAt,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    InkWell(
-                      onTap: _toggleLike,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                    const SizedBox(height: 2),
+                    // C 显示：@B昵称 + 消息
+                    if (comment.spoiler)
+                      _SpoilerContent(
+                        comment: comment,
+                        revealed: widget.revealedSpoiler,
+                        onReveal: () => widget.onToggleSpoiler(true),
+                      )
+                    else
+                      Text.rich(
+                        TextSpan(
                           children: [
-                            Icon(
-                              comment.likedByMe
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              size: 15,
-                              color: comment.likedByMe
-                                  ? colorScheme.error
-                                  : colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${comment.likeCount}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: comment.likedByMe
-                                    ? colorScheme.error
-                                    : colorScheme.onSurfaceVariant,
+                            if (parentName.isNotEmpty)
+                              TextSpan(
+                                text: '@$parentName ',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
+                            TextSpan(
+                              text: comment.content,
+                              style: theme.textTheme.bodyMedium,
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: widget.onReply,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        child: Text(
-                          '回复',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: colorScheme.primary,
+                    if (!comment.spoiler && comment.images.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      _CommentImages(images: comment.images),
+                    ],
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(
+                          comment.createdAt.length >= 16
+                              ? comment.createdAt.substring(5, 16)
+                              : comment.createdAt,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 12),
+                        InkWell(
+                          onTap: _toggleLike,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  comment.likedByMe
+                                      ? Icons.favorite_rounded
+                                      : Icons.favorite_border_rounded,
+                                  size: 15,
+                                  color: comment.likedByMe
+                                      ? colorScheme.error
+                                      : colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '${comment.likeCount}',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: comment.likedByMe
+                                        ? colorScheme.error
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        InkWell(
+                          onTap: widget.onReply,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            child: Text(
+                              '回复',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // C 被回复（有 D）时：查看详情 → 循环内联展开
+                        if (comment.replyCount > 0) ...[
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () => setState(() => _expanded = !_expanded),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              child: Text(
+                                _expanded ? '收起' : '查看详情',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
-              ],
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.more_horiz_rounded, size: 18),
+                color: colorScheme.onSurfaceVariant,
+                onPressed: _showMoreMenu,
+              ),
+            ],
+          ),
+        ),
+        // 循环嵌套二级页（C 转 A + D 们）
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 40, right: 8, bottom: 8),
+            child: _InlineReplies(
+              key: ValueKey('inline-sub-${comment.id}'),
+              kind: widget.kind,
+              targetId: widget.targetId,
+              parent: comment,
+              revealedSpoilers: widget.revealedSpoilers,
+              onToggleSpoiler: (id, r) => widget.onToggleSpoiler(r),
+              onChanged: widget.onChanged,
             ),
           ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.more_horiz_rounded, size: 18),
-            color: colorScheme.onSurfaceVariant,
-            onPressed: _showMoreMenu,
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
