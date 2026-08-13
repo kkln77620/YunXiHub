@@ -377,6 +377,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                                     _revealedSpoilers[comment.id] ?? false,
                                 onToggleSpoiler: (r) =>
                                     _toggleSpoiler(comment.id, r),
+                                revealedSpoilers: _revealedSpoilers,
                                 expanded: _expandedCommentId == comment.id,
                                 onToggleExpand: () =>
                                     _toggleExpand(comment.id),
@@ -458,6 +459,7 @@ class _CommunityCommentTile extends StatefulWidget {
     required this.onReply,
     required this.revealedSpoiler,
     required this.onToggleSpoiler,
+    required this.revealedSpoilers,
     required this.expanded,
     required this.onToggleExpand,
     this.highlight = false,
@@ -470,6 +472,7 @@ class _CommunityCommentTile extends StatefulWidget {
   final VoidCallback onReply;
   final bool revealedSpoiler;
   final ValueChanged<bool> onToggleSpoiler;
+  final Map<int, bool> revealedSpoilers;
   final bool expanded;
   final VoidCallback onToggleExpand;
   final bool highlight;
@@ -1273,6 +1276,7 @@ class _InlineRepliesState extends State<_InlineReplies> {
                     widget.revealedSpoilers[_replies[i].id] ?? false,
                 onToggleSpoiler: (r) =>
                     widget.onToggleSpoiler(_replies[i].id, r),
+                revealedSpoilers: widget.revealedSpoilers,
                 onChanged: () {
                   widget.onChanged();
                   _load();
@@ -1335,6 +1339,7 @@ class _ReplyTile extends StatefulWidget {
     required this.onReply,
     required this.revealedSpoiler,
     required this.onToggleSpoiler,
+    required this.revealedSpoilers,
   });
 
   final CommunityComment comment;
@@ -1344,6 +1349,7 @@ class _ReplyTile extends StatefulWidget {
   final VoidCallback onReply;
   final bool revealedSpoiler;
   final ValueChanged<bool> onToggleSpoiler;
+  final Map<int, bool> revealedSpoilers;
 
   @override
   State<_ReplyTile> createState() => _ReplyTileState();
