@@ -37,6 +37,10 @@ jobs:
         run: flutter build apk --release --dart-define=DANDANAPI_APPID=${{ secrets.DANDANAPI_APPID }} --dart-define=DANDANAPI_KEY=${{ secrets.DANDANAPI_KEY }}
         shell: bash
 
+      - name: Print APK signature (for CI verification)
+        run: keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk 2>/dev/null | grep -E 'Owner|SHA256|Signer|Valid' | head -8
+        shell: bash
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

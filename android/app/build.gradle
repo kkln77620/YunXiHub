@@ -32,8 +32,9 @@ def keystorePropertiesFile = rootProject.file('key.properties')
 def hasReleaseSigning = false
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    // file() 相对本 project 目录（android/app/），storeFile=../app/xxx → android/app/xxx ✓
     if (keystoreProperties['storeFile'] != null &&
-            new File(keystoreProperties['storeFile']).exists()) {
+            file(keystoreProperties['storeFile']).exists()) {
         hasReleaseSigning = true
     }
 }
