@@ -25,6 +25,7 @@ class _LoginPageState extends State<LoginPage>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _codeController = TextEditingController();
+  final _inviteController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool _submitting = false;
@@ -51,6 +52,7 @@ class _LoginPageState extends State<LoginPage>
     _emailController.dispose();
     _passwordController.dispose();
     _codeController.dispose();
+    _inviteController.dispose();
     super.dispose();
   }
 
@@ -107,6 +109,7 @@ class _LoginPageState extends State<LoginPage>
             email: email,
             code: _codeController.text.trim(),
             password: password,
+            inviteCode: _inviteController.text.trim(),
           );
           if (mounted) {
             Navigator.of(context).pop(true);
@@ -253,7 +256,7 @@ class _LoginPageState extends State<LoginPage>
                   ),
                   const SizedBox(height: 12),
                 ],
-                TextFormField(
+                                TextFormField(
                   controller: _passwordController,
                   obscureText: _obscure,
                   decoration: InputDecoration(
@@ -271,6 +274,19 @@ class _LoginPageState extends State<LoginPage>
                   ),
                   validator: _validatePassword,
                 ),
+                if (_mode == _AuthMode.register) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _inviteController,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: '邀请码（选填）',
+                      helperText: '填写邀请码注册可获 100 积分奖励',
+                      prefixIcon: Icon(Icons.card_giftcard_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _submitting ? null : _submit,

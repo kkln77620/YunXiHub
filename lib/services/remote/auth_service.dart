@@ -39,6 +39,9 @@ class AuthService {
   String get email => GStorage.getSetting(SettingsKeys.authEmail);
   int get vipLevel => GStorage.getSetting(SettingsKeys.authVipLevel);
   String get vipExpire => GStorage.getSetting(SettingsKeys.authVipExpire);
+  String get nickname => GStorage.getSetting(SettingsKeys.authNickname);
+  String get avatar => GStorage.getSetting(SettingsKeys.authAvatar);
+  String get inviteCode => GStorage.getSetting(SettingsKeys.authInviteCode);
 
   /// 发送验证码：purpose = register（注册）| reset（重置密码）
   Future<String> sendCode(String email, {String purpose = 'register'}) async {
@@ -54,11 +57,14 @@ class AuthService {
     required String email,
     required String code,
     required String password,
+    String? inviteCode,
   }) async {
     final data = await _post('/api/auth/register', {
       'email': email.trim(),
       'code': code.trim(),
       'password': password,
+      if (inviteCode != null && inviteCode.trim().isNotEmpty)
+        'invite_code': inviteCode.trim(),
     });
     await _applyAuth(data);
   }
@@ -111,6 +117,18 @@ class AuthService {
           SettingsKeys.authVipExpire,
           user['vip_expire']?.toString() ?? '',
         );
+        await GStorage.putSetting(
+          SettingsKeys.authNickname,
+          user['nickname']?.toString() ?? '',
+        );
+        await GStorage.putSetting(
+          SettingsKeys.authAvatar,
+          user['avatar']?.toString() ?? '',
+        );
+        await GStorage.putSetting(
+          SettingsKeys.authInviteCode,
+          user['invite_code']?.toString() ?? '',
+        );
       }
     } catch (_) {
       // 静默失败：离线时不影响使用
@@ -123,6 +141,87 @@ class AuthService {
     await GStorage.putSetting(SettingsKeys.authEmail, '');
     await GStorage.putSetting(SettingsKeys.authVipLevel, 0);
     await GStorage.putSetting(SettingsKeys.authVipExpire, '');
+    await GStorage.putSetting(SettingsKeys.authNickname, '');
+    await GStorage.putSetting(SettingsKeys.authAvatar, '');
+    await GStorage.putSetting(SettingsKeys.authInviteCode, '');
+  }
+
+  /// 更新资料（昵称/头像），成功返回新资料；失败抛 [AuthException]
+  Future<Map<String, dynamic>> updateProfile({
+    String? nickname,
+    String? avatar,
+  }) async {
+    final token = GStorage.getSetting(SettingsKeys.authToken).trim();
+    if (token.isEmpty) throw AuthException('请先登录');
+    try {
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/api/user/profile',
+        data: {
+          if (nickname != null) 'nickname': nickname,
+          if (avatar != null) 'avatar': avatar,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final raw = response.data;
+      final map = raw is String
+          ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+          : (raw as Map).cast<String, dynamic>();
+      if (map['code'] != 0) {
+        throw AuthException(map['msg']?.toString() ?? '更新失败');
+      }
+      if (map['data'] is Map) {
+        final user = map['data'] as Map;
+        await GStorage.putSetting(
+          SettingsKeys.authNickname,
+          user['nickname']?.toString() ?? '',
+        );
+        await GStorage.putSetting(
+          SettingsKeys.authAvatar,
+          user['avatar']?.toString() ?? '',
+        );
+      }
+      return map['data'] is Map ? (map['data'] as Map).cast<String, dynamic>() : {};
+    } on DioException catch (e) {
+      throw AuthException('网络错误: ${e.message}');
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException('请求失败: $e');
+    }
+  }
+
+  /// 上传图片（头像/评论），返回 /uploads/xxx 相对 URL
+  Future<String> uploadImage(
+    String filePath, {
+    String use = 'comment',
+  }) async {
+    final token = GStorage.getSetting(SettingsKeys.authToken).trim();
+    if (token.isEmpty) throw AuthException('请先登录');
+    try {
+      final form = FormData.fromMap({
+        'use': use,
+        'file': await MultipartFile.fromFile(filePath),
+      });
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/api/upload',
+        data: form,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final raw = response.data;
+      final map = raw is String
+          ? (jsonDecode(raw) as Map).cast<String, dynamic>()
+          : (raw as Map).cast<String, dynamic>();
+      if (map['code'] != 0) {
+        throw AuthException(map['msg']?.toString() ?? '上传失败');
+      }
+      return map['url']?.toString() ?? '';
+    } on DioException catch (e) {
+      throw AuthException('网络错误: ${e.message}');
+    } on AuthException {
+      rethrow;
+    } catch (e) {
+      throw AuthException('上传失败: $e');
+    }
   }
 
   /// 保存 token 与用户信息，随后触发历史记录云同步
@@ -145,6 +244,18 @@ class AuthService {
       await GStorage.putSetting(
         SettingsKeys.authVipExpire,
         user['vip_expire']?.toString() ?? '',
+      );
+      await GStorage.putSetting(
+        SettingsKeys.authNickname,
+        user['nickname']?.toString() ?? '',
+      );
+      await GStorage.putSetting(
+        SettingsKeys.authAvatar,
+        user['avatar']?.toString() ?? '',
+      );
+      await GStorage.putSetting(
+        SettingsKeys.authInviteCode,
+        user['invite_code']?.toString() ?? '',
       );
     }
     // 登录/注册成功即同步历史记录，并把游客设备数据并入账号（失败静默）

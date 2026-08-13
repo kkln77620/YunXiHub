@@ -5,6 +5,7 @@ import 'package:kazumi/bean/card/bangumi_history_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/pages/history/history_controller.dart';
+import 'package:kazumi/services/remote/history_sync_service.dart';
 import 'package:kazumi/utils/constants.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -28,6 +29,19 @@ class _HistoryPageState extends State<HistoryPage> {
   void initState() {
     super.initState();
     historyController.init();
+    // 云同步完成后自动刷新列表
+    HistorySyncService.instance.syncedVersion.addListener(_onCloudSynced);
+  }
+
+  void _onCloudSynced() {
+    if (!mounted) return;
+    historyController.init();
+  }
+
+  @override
+  void dispose() {
+    HistorySyncService.instance.syncedVersion.removeListener(_onCloudSynced);
+    super.dispose();
   }
 
   void onBackPressed(BuildContext context) {

@@ -48,11 +48,19 @@ class _CollectPageState extends State<CollectPage>
   void initState() {
     super.initState();
     collectController.loadCollectibles();
+    // 云同步完成后自动刷新列表
+    CollectSyncService.instance.syncedVersion.addListener(_onCloudSynced);
     tabController = TabController(vsync: this, length: tabs.length);
+  }
+
+  void _onCloudSynced() {
+    if (!mounted) return;
+    collectController.loadCollectibles();
   }
 
   @override
   void dispose() {
+    CollectSyncService.instance.syncedVersion.removeListener(_onCloudSynced);
     tabController?.dispose();
     super.dispose();
   }

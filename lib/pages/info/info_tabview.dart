@@ -6,6 +6,7 @@ import 'package:kazumi/bean/card/comments_card.dart';
 import 'package:kazumi/bean/card/character_card.dart';
 import 'package:kazumi/bean/card/staff_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
+import 'package:kazumi/pages/comments/community_comments_view.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_relation.dart';
@@ -74,6 +75,9 @@ class _InfoTabViewState extends State<InfoTabView>
   final maxWidth = 950.0;
   bool fullIntro = false;
   bool fullTag = false;
+
+  /// 评论来源：0=Bangumi（只读），1=YunXiHub 社区（可发表）
+  int _commentSource = 0;
 
   @override
   void initState() {
@@ -341,6 +345,29 @@ class _InfoTabViewState extends State<InfoTabView>
   Widget get commentsListBody {
     return Builder(
       builder: (BuildContext context) {
+        if (_commentSource == 1) {
+          // b 区：YunXiHub 社区评论（可发表）
+          return CustomScrollView(
+            scrollBehavior: const ScrollBehavior().copyWith(
+              scrollbars: false,
+            ),
+            key: PageStorageKey<String>('吐槽-社区'),
+            slivers: <Widget>[
+              SliverOverlapInjector(
+                handle:
+                    NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+              ),
+              SliverToBoxAdapter(child: _commentSourceSwitch()),
+              SliverFillRemaining(
+                hasScrollBody: true,
+                child: CommunityCommentsView(
+                  kind: 'subject',
+                  targetId: widget.bangumiItem.id,
+                ),
+              ),
+            ],
+          );
+        }
         return NotificationListener<ScrollEndNotification>(
           onNotification: (scrollEnd) {
             final metrics = scrollEnd.metrics;
@@ -359,6 +386,7 @@ class _InfoTabViewState extends State<InfoTabView>
                 handle:
                     NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               ),
+              SliverToBoxAdapter(child: _commentSourceSwitch()),
               SliverLayoutBuilder(builder: (context, _) {
                 final myInterest = widget.bangumiItem.interest;
                 final showMyReview = !widget.commentsIsLoading &&
@@ -475,6 +503,39 @@ class _InfoTabViewState extends State<InfoTabView>
           ),
         );
       },
+    );
+  }
+
+  /// 评论区来源切换：Bangumi（a，只读）/ YunXiHub 社区（b，可发表）
+  Widget _commentSourceSwitch() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Center(
+        child: SizedBox(
+          width: maxWidth,
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 0,
+                label: Text('Bangumi 评论'),
+                icon: Icon(Icons.chat_bubble_outline_rounded, size: 16),
+              ),
+              ButtonSegment(
+                value: 1,
+                label: Text('社区评论'),
+                icon: Icon(Icons.forum_outlined, size: 16),
+              ),
+            ],
+            selected: {_commentSource},
+            onSelectionChanged: (s) =>
+                setState(() => _commentSource = s.first),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

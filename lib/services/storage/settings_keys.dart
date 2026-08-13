@@ -455,6 +455,21 @@ class SettingsKeys {
     '',
     group: SettingGroup.misc,
   );
+  static const authNickname = SettingKey<String>(
+    'authNickname',
+    '',
+    group: SettingGroup.misc,
+  );
+  static const authAvatar = SettingKey<String>(
+    'authAvatar',
+    '',
+    group: SettingGroup.misc,
+  );
+  static const authInviteCode = SettingKey<String>(
+    'authInviteCode',
+    '',
+    group: SettingGroup.misc,
+  );
   // YunXiHub 云同步（历史/追番，登录账号或游客设备均可，默认开启）
   static const cloudHistorySyncEnable = SettingKey<bool>(
     'cloudHistorySyncEnable',

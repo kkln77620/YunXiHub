@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
+import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/points_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// 积分页：每日签到获取积分；兑换功能预留（暂隐藏）
 class PointsPage extends StatefulWidget {
@@ -78,6 +80,31 @@ class _PointsPageState extends State<PointsPage> {
       KazumiDialog.showToast(message: e.toString());
     } finally {
       if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  bool _sharing = false;
+
+  /// 每日分享：拉起系统分享（含邀请码），分享面板返回后领取积分
+  Future<void> _share() async {
+    if (_sharing) return;
+    final inviteCode = AuthService.instance.inviteCode;
+    final text = '我在用 YunXiHub 看番，超好用！'
+        '${inviteCode.isNotEmpty ? '\n我的邀请码：$inviteCode（注册填写双方都有福利）' : ''}'
+        '\nhttps://yunxi.yunxiapp.eu.cc';
+    setState(() => _sharing = true);
+    try {
+      await SharePlus.instance.share(ShareParams(text: text));
+      // 分享面板返回后领取积分（每日一次）
+      final result = await PointsService.instance.share();
+      if (!mounted) return;
+      KazumiDialog.showToast(message: result.msg);
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      KazumiDialog.showToast(message: e.toString());
+    } finally {
+      if (mounted) setState(() => _sharing = false);
     }
   }
 
@@ -184,6 +211,36 @@ class _PointsPageState extends State<PointsPage> {
                                         : '每日签到 +10 积分',
                                   ),
                                 ),
+                                const SizedBox(height: 10),
+                                OutlinedButton.icon(
+                                  onPressed:
+                                      (_info?.sharedToday ?? false) || _sharing
+                                          ? null
+                                          : _share,
+                                  icon: _sharing
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.share_rounded),
+                                  label: Text(
+                                    (_info?.sharedToday ?? false)
+                                        ? '今日已分享'
+                                        : '每日分享 +10 积分',
+                                  ),
+                                ),
+                                if (AuthService.instance.inviteCode.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      '我的邀请码：${AuthService.instance.inviteCode}',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

@@ -5,6 +5,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/card/user_comments_card.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
+import 'package:kazumi/pages/comments/community_comments_view.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
 
@@ -32,6 +33,9 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
       GlobalKey<RefreshIndicatorState>();
 
   int ep = 0;
+
+  /// 评论来源：0=Bangumi（只读），1=YunXiHub 社区（可发表）
+  int _commentSource = 0;
 
   Future<void> loadComments(int episode) async {
     commentsQueryTimeout = false;
@@ -97,6 +101,15 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
   }
 
   Widget get episodeCommentsBody {
+    if (_commentSource == 1) {
+      // b 区：社区评论（按当前分集 ID 重建）
+      final episodeId = videoPageController.episodeInfo.id;
+      return CommunityCommentsView(
+        key: ValueKey<int>(episodeId),
+        kind: 'episode',
+        targetId: episodeId,
+      );
+    }
     return CustomScrollView(
       scrollBehavior: const ScrollBehavior().copyWith(
         scrollbars: false,
@@ -310,7 +323,34 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
         key: _refreshIndicatorKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [commentsInfo, Expanded(child: episodeCommentsBody)],
+          children: [
+            commentsInfo,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(
+                    value: 0,
+                    label: Text('Bangumi 评论'),
+                    icon: Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    label: Text('社区评论'),
+                    icon: Icon(Icons.forum_outlined, size: 16),
+                  ),
+                ],
+                selected: {_commentSource},
+                onSelectionChanged: (s) =>
+                    setState(() => _commentSource = s.first),
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+            Expanded(child: episodeCommentsBody),
+          ],
         ),
         onRefresh: () async {
           await loadComments(ep == 0 ? widget.episode : ep);

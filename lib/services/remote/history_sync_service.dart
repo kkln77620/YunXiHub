@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/history/history_module.dart';
 import 'package:kazumi/services/remote/collect_sync_service.dart';
@@ -19,6 +20,9 @@ class HistorySyncService {
   HistorySyncService._();
 
   static final HistorySyncService instance = HistorySyncService._();
+
+  /// 同步完成版本号：每次成功同步 +1，UI 监听此值刷新
+  final ValueNotifier<int> syncedVersion = ValueNotifier<int>(0);
 
   Timer? _debounceTimer;
   static const Duration _debounceDelay = Duration(seconds: 20);
@@ -69,6 +73,8 @@ class HistorySyncService {
       if (remoteItems.isNotEmpty) {
         await _mergeRemote(remoteItems);
       }
+      // 通知 UI 刷新（历史页监听此版本号）
+      syncedVersion.value++;
     } catch (_) {
       // 静默失败：离线/服务器异常不影响本地使用
     }
