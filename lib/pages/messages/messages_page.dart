@@ -190,7 +190,7 @@ class _MessagesPageState extends State<MessagesPage>
                             : m
                     ];
                   }
-                  _unreadCount = (_unreadCount - 1).clamp(0, 1 << 31);
+                  if (_unreadCount > 0) _unreadCount -= 1;
                 });
               }
             }
