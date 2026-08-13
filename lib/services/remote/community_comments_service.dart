@@ -89,7 +89,7 @@ class CommunityCommentsService {
         ? (jsonDecode(raw) as Map).cast<String, dynamic>()
         : (raw as Map).cast<String, dynamic>();
     if (data['code'] != 0 || data['items'] is! List) {
-      return (items: const [], total: 0);
+      return (items: const <CommunityComment>[], total: 0);
     }
     return (
       items: [
