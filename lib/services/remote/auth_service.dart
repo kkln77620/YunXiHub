@@ -114,7 +114,7 @@ class AuthService {
           : (raw as Map).cast<String, dynamic>();
       if (map['code'] == 0 && map['data'] is Map) {
         final user = map['data'] as Map;
-        await _applyUserInfo(user);
+        await _applyUserInfo(user.cast<String, dynamic>());
       }
     } catch (_) {
       // 静默失败：离线时不影响使用

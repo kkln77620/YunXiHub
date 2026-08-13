@@ -84,14 +84,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                         radius: 36,
                         backgroundColor:
                             Theme.of(context).colorScheme.surfaceContainerHighest,
-                        foregroundImage: pendingAvatarPath != null
+                        foregroundImage: (pendingAvatarPath != null
                             ? FileImage(File(pendingAvatarPath!))
                             : (currentAvatar.isNotEmpty
                                 ? NetworkImage(
                                     currentAvatar.startsWith('http')
                                         ? currentAvatar
                                         : '$baseUrl$currentAvatar')
-                                : null),
+                                : null)) as ImageProvider<Object>?,
                         child: (pendingAvatarPath == null &&
                                 currentAvatar.isEmpty)
                             ? Icon(

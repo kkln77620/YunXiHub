@@ -595,6 +595,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
                 ],
               ),
             ),
+          ],
         ],
       ),
     );
