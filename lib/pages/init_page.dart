@@ -68,6 +68,8 @@ class _InitPageState extends State<InitPage> {
     await _checkRunningOnX11();
     await _showShortcutDialog();
     await _pluginInit();
+    // 自动从服务器规则仓库导入全部视频源（缺失才导入，静默失败）
+    unawaited(pluginsController.installAllServerPlugins());
     // 登录状态下启动即同步一次云端历史/追番记录（游客设备同样同步，失败静默）
     unawaited(HistorySyncService.instance.syncOnLaunch());
     unawaited(CollectSyncService.instance.syncOnLaunch());

@@ -480,6 +480,11 @@ class SettingsKeys {
     0,
     group: SettingGroup.misc,
   );
+  static const authSelectedTitle = SettingKey<String>(
+    'authSelectedTitle',
+    '',
+    group: SettingGroup.misc,
+  );
   // YunXiHub 云同步（历史/追番，登录账号或游客设备均可，默认开启）
   static const cloudHistorySyncEnable = SettingKey<bool>(
     'cloudHistorySyncEnable',

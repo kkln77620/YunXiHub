@@ -48,11 +48,25 @@ class AuthService {
   /// 当前登录用户 ID（服务器返回，用于判断“我的评论”），0 表示未知
   int get userId => GStorage.getSetting(SettingsKeys.authUserId);
 
-  /// 头衔：管理员 > 赞助用户 > 普通用户
+  /// 头衔：管理员 > 赞助用户 > 普通用户（支持手动选择已拥有的头衔）
   String get title {
+    final selected = GStorage.getSetting(SettingsKeys.authSelectedTitle).trim();
+    if (selected.isNotEmpty && hasTitle(selected)) return selected;
     if (isAdmin) return '管理员';
     if (vipLevel > 0) return '赞助用户';
     return '普通用户';
+  }
+
+  /// 是否拥有某头衔
+  bool hasTitle(String t) {
+    switch (t) {
+      case '管理员':
+        return isAdmin;
+      case '赞助用户':
+        return vipLevel > 0;
+      default:
+        return true;
+    }
   }
 
   /// 发送验证码：purpose = register（注册）| reset（重置密码）

@@ -212,7 +212,6 @@ abstract class _PluginsController with Store {
     return refreshedAt != null &&
         DateTime.now().difference(refreshedAt) < _pluginCatalogMaxAge;
   }
-
   void _replacePlugin(Plugin plugin) {
     bool flag = false;
     for (int i = 0; i < pluginList.length; ++i) {
@@ -224,6 +223,41 @@ abstract class _PluginsController with Store {
     }
     if (!flag) {
       pluginList.add(plugin);
+      return;
+    }
+  }
+
+  /// 自动从 YunXiHub 服务器规则仓库导入全部源（缺失才导入，静默失败）
+  /// 满足“所有源默认下载启用”，无需用户手动到规则仓库安装。
+  Future<void> installAllServerPlugins() async {
+    try {
+      final catalog = await PluginCatalogApi.getPluginList();
+      if (catalog.isEmpty) return;
+      final localNames = {
+        for (final p in pluginList) _catalogKey(p.name),
+      };
+      final toInstall = <Plugin>[];
+      for (final item in catalog) {
+        if (localNames.contains(_catalogKey(item.name))) continue;
+        try {
+          final plugin = await PluginCatalogApi.getPlugin(item.name);
+          if (plugin.name.isNotEmpty) toInstall.add(plugin);
+        } catch (_) {
+          // 单个源失败不影响其他源
+        }
+      }
+      if (toInstall.isEmpty) return;
+      await _mutateAndPersist(
+        () {
+          for (final plugin in toInstall) {
+            _replacePlugin(plugin);
+          }
+        },
+        errorMessage: 'Plugin: failed to persist auto server import',
+      );
+      KazumiLogger().i('Plugin: auto imported ${toInstall.length} sources from server');
+    } catch (error, stackTrace) {
+      _errorReporter('Plugin: auto import from server failed', error, stackTrace);
     }
   }
 

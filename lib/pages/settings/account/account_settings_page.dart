@@ -8,6 +8,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/pages/account/login_page.dart';
+import 'package:kazumi/pages/account/title_select_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/history_sync_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
@@ -56,6 +57,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     await AuthService.instance.logout();
     if (mounted) setState(() {});
     KazumiDialog.showToast(message: '已退出登录');
+  }
+
+  /// 打开头衔选择页
+  Future<void> _openTitleSelect() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TitleSelectPage()),
+    );
+    if (mounted) setState(() {});
   }
 
   /// 编辑资料：昵称 + 头像（审查在服务端执行，支持选择后本地预览再保存；
@@ -197,7 +206,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                                 var avatarUrl = '';
                                 if (pendingAvatarChanged &&
                                     pendingAvatarPath != null) {
-                                  KazumiDialog.showLoading(msg: '上传中…');
+                                  // 按钮内转圈反馈（不再叠加全局 loading 弹窗）
                                   avatarUrl = await AuthService.instance
                                       .uploadImage(pendingAvatarPath!,
                                           use: 'avatar');
@@ -207,21 +216,18 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                                   avatar:
                                       avatarUrl.isEmpty ? null : avatarUrl,
                                 );
-                                KazumiDialog.dismiss(); // 关 loading
                                 if (!mounted) return;
                                 Navigator.of(dialogContext).pop(); // 关对话框
                                 setState(() {});
                                 KazumiDialog.showToast(message: '资料已保存');
                               } on AuthException catch (e) {
-                                KazumiDialog.dismiss();
                                 if (!mounted) return;
                                 setState(() => saving = false);
-                                KazumiDialog.showToast(message: e.message);
+                                KazumiDialog.showToast(message: '保存失败：${e.message}');
                               } catch (e) {
-                                KazumiDialog.dismiss();
                                 if (!mounted) return;
                                 setState(() => saving = false);
-                                KazumiDialog.showToast(message: e.toString());
+                                KazumiDialog.showToast(message: '保存失败：$e');
                               }
                             },
                       child: saving
@@ -293,9 +299,9 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 ),
                 SettingsTile(
                   leading: Icons.workspace_premium_rounded,
-                  onPressed: (_) {},
-                  title: const Text('赞助用户'),
-                  description: Text(_vipLabel),
+                  onPressed: (_) => _openTitleSelect(),
+                  title: const Text('头衔'),
+                  description: Text(AuthService.instance.title),
                 ),
                 SettingsTile(
                   leading: Icons.logout_rounded,

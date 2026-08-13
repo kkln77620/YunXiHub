@@ -61,7 +61,8 @@ class CommunityComment {
       likeCount: (j['like_count'] as num?)?.toInt() ?? 0,
       replyCount: (j['reply_count'] as num?)?.toInt() ?? 0,
       reportCount: (j['report_count'] as num?)?.toInt() ?? 0,
-      likedByMe: (j['liked_by_me'] as num?)?.toInt() == 1,
+      likedByMe: j['liked_by_me'] == true ||
+          (j['liked_by_me'] as num?)?.toInt() == 1,
       createdAt: j['created_at']?.toString() ?? '',
     );
   }

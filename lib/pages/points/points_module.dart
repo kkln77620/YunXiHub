@@ -4,6 +4,10 @@ import 'package:kazumi/pages/points/points_page.dart';
 final pointsModule = createModule(
   path: '/points',
   register: (c) {
-    c..route('/', child: (context, state) => const PointsPage());
+    c..route(
+        '/',
+        transition: TransitionType.none,
+        child: (context, state) => const PointsPage(),
+      );
   },
 );
