@@ -1055,7 +1055,7 @@ class _RepliesSheet extends StatefulWidget {
   final int targetId;
   final CommunityComment parent; // B
   final Map<int, bool> revealedSpoilers;
-  final ValueChanged<bool> Function(int, bool) onToggleSpoiler;
+  final void Function(int, bool) onToggleSpoiler;
 
   @override
   State<_RepliesSheet> createState() => _RepliesSheetState();
@@ -1327,7 +1327,7 @@ class _RepliesSheetState extends State<_RepliesSheet> {
             child: FilledButton.icon(
               onPressed: () => _openComposer(),
               icon: const Icon(Icons.reply_rounded),
-              label: const Text('回复 ${parentName}'),
+              label: Text('回复 $parentName'),
             ),
           ),
         ),
@@ -1339,6 +1339,7 @@ class _RepliesSheetState extends State<_RepliesSheet> {
 /// 二级页里的一条回复（C：显示 @B 昵称）
 class _ReplyTile extends StatefulWidget {
   const _ReplyTile({
+    super.key,
     required this.comment,
     required this.kind,
     required this.targetId,
