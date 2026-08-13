@@ -373,6 +373,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                         parentId: parentId,
                         replyTo: replyTo,
                       ),
+                      onToggleSpoiler: _toggleSpoiler,
                       onInsertLocal: (comment) {
                         // 二级内回复成功：当前层列表已由视图内部插入，
                         // 这里只需修正上级（栈中上一元素）的 reply_count
