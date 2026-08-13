@@ -38,7 +38,9 @@ jobs:
         shell: bash
 
       - name: Print APK signature (for CI verification)
-        run: keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk 2>/dev/null | grep -E 'Owner|SHA256|Signer|Valid' | head -8
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk 2>/dev/null | grep -E 'Signer #1 certificate SHA-256|DN:' | head -4
         shell: bash
 
       - name: Upload APK
