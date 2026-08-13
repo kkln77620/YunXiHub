@@ -34,6 +34,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
   List<CommunityComment> _items = [];
   bool _loading = true;
   bool _error = false;
+  String _errorMsg = '';
   CommunitySort _sort = CommunitySort.hotDesc;
 
   @override
@@ -46,6 +47,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     setState(() {
       _loading = true;
       _error = false;
+      _errorMsg = '';
     });
     try {
       final result = await CommunityCommentsService.instance.list(
@@ -58,10 +60,11 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
         _items = result.items;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = true;
+        _errorMsg = e.toString();
         _loading = false;
       });
     }
@@ -142,11 +145,28 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
               ? const Center(child: CircularProgressIndicator())
               : _error
                   ? Center(
-                      child: GeneralErrorWidget(
-                        errMsg: '社区评论加载失败',
-                        actions: [
-                          GeneralErrorButton(text: '重试', onPressed: _load),
-                        ],
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            GeneralErrorWidget(
+                              errMsg: '社区评论加载失败',
+                              actions: [
+                                GeneralErrorButton(
+                                    text: '重试', onPressed: _load),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _errorMsg,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     )
                   : _items.isEmpty

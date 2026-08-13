@@ -5,6 +5,7 @@ import 'package:kazumi/pages/collect/collect_module.dart';
 import 'package:kazumi/pages/index_page.dart';
 import 'package:kazumi/pages/info/info_module.dart';
 import 'package:kazumi/pages/init_page.dart';
+import 'package:kazumi/pages/messages/messages_page.dart';
 import 'package:kazumi/pages/my/my_module.dart';
 import 'package:kazumi/pages/onboarding/onboarding_page.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
@@ -98,6 +99,10 @@ final indexModule = createModule(
       )
       ..module(tabModule)
       ..module(videoModule)
+      ..route(
+        '/messages',
+        child: (context, state) => const MessagesPage(),
+      )
       ..route(
         ImageViewer.routePath,
         child: (context, state) {

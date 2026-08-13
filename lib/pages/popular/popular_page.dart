@@ -5,7 +5,6 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/custom_dropdown_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/pages/messages/messages_page.dart';
 import 'package:kazumi/pages/popular/popular_controller.dart';
 import 'package:kazumi/bean/card/bangumi_card.dart';
 import 'package:kazumi/utils/constants.dart';
@@ -85,9 +84,7 @@ class _PopularPageState extends State<PopularPage> {
       await context.pushNamed('/settings/account/');
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const MessagesPage()),
-    );
+    await context.pushNamed('/messages/');
     _refreshUnread();
   }
 

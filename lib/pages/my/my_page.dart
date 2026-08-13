@@ -8,6 +8,7 @@ import 'package:kazumi/modules/my/watch_stats.dart';
 import 'package:kazumi/pages/menu/route_visibility.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/pages/my/recent_watch_card.dart';
+import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/constants.dart';
@@ -323,13 +324,23 @@ class _MyPageState extends State<MyPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      displayName,
-                      style: textTheme.titleMedium?.copyWith(
-                        color: colorScheme.onSurface,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            style: textTheme.titleMedium?.copyWith(
+                              color: colorScheme.onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (loggedIn) ...[
+                          const SizedBox(width: 6),
+                          _TitleBadge(title: AuthService.instance.title),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -538,6 +549,43 @@ class _StatTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 头衔徽标：管理员 / 赞助用户 / 普通用户
+class _TitleBadge extends StatelessWidget {
+  const _TitleBadge({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final (Color bg, Color fg) = switch (title) {
+      '管理员' => (colorScheme.primary, colorScheme.onPrimary),
+      '赞助用户' => (
+          colorScheme.tertiaryContainer,
+          colorScheme.onTertiaryContainer
+        ),
+      _ => (
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurfaceVariant
+        ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            ),
       ),
     );
   }

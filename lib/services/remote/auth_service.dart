@@ -48,6 +48,13 @@ class AuthService {
   /// 当前登录用户 ID（服务器返回，用于判断“我的评论”），0 表示未知
   int get userId => GStorage.getSetting(SettingsKeys.authUserId);
 
+  /// 头衔：管理员 > 赞助用户 > 普通用户
+  String get title {
+    if (isAdmin) return '管理员';
+    if (vipLevel > 0) return '赞助用户';
+    return '普通用户';
+  }
+
   /// 发送验证码：purpose = register（注册）| reset（重置密码）
   Future<String> sendCode(String email, {String purpose = 'register'}) async {
     final data = await _post('/api/auth/send_code', {
