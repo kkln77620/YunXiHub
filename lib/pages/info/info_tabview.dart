@@ -7,6 +7,7 @@ import 'package:kazumi/bean/card/character_card.dart';
 import 'package:kazumi/bean/card/staff_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/pages/comments/community_comments_view.dart';
+import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_relation.dart';
@@ -91,6 +92,11 @@ class _InfoTabViewState extends State<InfoTabView>
   @override
   void dispose() {
     widget.tabController.removeListener(_onTabChanged);
+    // 退出视频页：清除该番剧的社区评论缓存（下次进入重新加载）
+    CommunityCommentsService.clearCache(
+      kind: 'subject',
+      targetId: widget.bangumiItem.id,
+    );
     super.dispose();
   }
 

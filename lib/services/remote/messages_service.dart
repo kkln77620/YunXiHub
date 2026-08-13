@@ -27,6 +27,8 @@ class AppMessage {
   final String content;
   final bool isRead;
   final String createdAt;
+  final String kind; // 关联评论的 kind（subject/episode/character），供跳转
+  final int targetId; // 关联评论的 target_id，供跳转
 
   const AppMessage({
     required this.id,
@@ -37,6 +39,8 @@ class AppMessage {
     required this.content,
     required this.isRead,
     required this.createdAt,
+    this.kind = '',
+    this.targetId = 0,
   });
 
   factory AppMessage.fromJson(Map<String, dynamic> j) {
@@ -50,6 +54,8 @@ class AppMessage {
       content: j['content']?.toString() ?? '',
       isRead: isReadRaw == true || (isReadRaw as num?)?.toInt() == 1,
       createdAt: j['created_at']?.toString() ?? '',
+      kind: j['kind']?.toString() ?? '',
+      targetId: (j['target_id'] as num?)?.toInt() ?? 0,
     );
   }
 }

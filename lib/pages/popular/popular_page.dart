@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -29,7 +30,7 @@ class PopularPage extends StatefulWidget {
   State<PopularPage> createState() => _PopularPageState();
 }
 
-class _PopularPageState extends State<PopularPage> {
+class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
   late final ScrollController scrollController;
   PopularController get popularController => widget.controller;
 
@@ -39,9 +40,13 @@ class _PopularPageState extends State<PopularPage> {
   /// 未读消息数（主页右上角信封红点）
   int _unreadCount = 0;
 
+  /// 未读数轮询定时器（每 60 秒静默刷新，保证主页常驻显示）
+  Timer? _unreadTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     scrollController = ScrollController(
       initialScrollOffset: popularController.scrollOffset,
     );
@@ -50,6 +55,18 @@ class _PopularPageState extends State<PopularPage> {
       popularController.queryBangumiByTrend();
     }
     _refreshUnread();
+    // 定时刷新未读数（App 前台期间保持新鲜）
+    _unreadTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) _refreshUnread();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从后台回到前台立即刷新未读数
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshUnread();
+    }
   }
 
   /// 拉取未读消息数（未登录时忽略）
@@ -90,6 +107,8 @@ class _PopularPageState extends State<PopularPage> {
 
   @override
   void dispose() {
+    _unreadTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(scrollListener);
     scrollController.dispose();
     super.dispose();

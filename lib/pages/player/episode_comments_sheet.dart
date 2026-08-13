@@ -6,6 +6,7 @@ import 'package:kazumi/bean/card/user_comments_card.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/modules/bangumi/episode_item.dart';
 import 'package:kazumi/pages/comments/community_comments_view.dart';
+import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
 
@@ -71,6 +72,18 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
   void initState() {
     super.initState();
     _resetAndScheduleRefresh();
+  }
+
+  @override
+  void dispose() {
+    // 退出播放器：清除分集社区评论缓存（下次进入重新加载）
+    try {
+      final episodeId = videoPageController.episodeInfo.id;
+      if (episodeId > 0) {
+        CommunityCommentsService.clearCache(kind: 'episode', targetId: episodeId);
+      }
+    } catch (_) {}
+    super.dispose();
   }
 
   @override

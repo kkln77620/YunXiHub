@@ -18,11 +18,14 @@ class CommunityComment {
   final List<String> images;
   final bool spoiler;
   final bool isSponsor;
+  final String title; // 头衔：管理员 / 赞助用户 / 普通用户（服务器实时计算）
   final int likeCount;
   final int replyCount;
   final int reportCount;
   final bool likedByMe;
   final String createdAt;
+  final List<CommunityComment> replies; // 主评论附带的热度前3条回复
+  final String parentNickname; // 回复所指向的父评论昵称（@ 展示用）
 
   const CommunityComment({
     required this.id,
@@ -36,11 +39,14 @@ class CommunityComment {
     required this.images,
     required this.spoiler,
     required this.isSponsor,
+    required this.title,
     required this.likeCount,
     required this.replyCount,
     required this.reportCount,
     required this.likedByMe,
     required this.createdAt,
+    this.replies = const [],
+    this.parentNickname = '',
   });
 
   factory CommunityComment.fromJson(Map<String, dynamic> j) {
@@ -56,11 +62,17 @@ class CommunityComment {
       images: _toStrList(j['images']),
       spoiler: _toBool(j['spoiler']),
       isSponsor: _toBool(j['is_sponsor']),
+      title: j['title']?.toString() ?? '',
       likeCount: _toInt(j['like_count']),
       replyCount: _toInt(j['reply_count']),
       reportCount: _toInt(j['report_count']),
       likedByMe: _toBool(j['liked_by_me']),
       createdAt: j['created_at']?.toString() ?? '',
+      replies: [
+        for (final r in _toList(j['replies']))
+          if (r is Map) CommunityComment.fromJson(r.cast<String, dynamic>())
+      ],
+      parentNickname: j['parent_nickname']?.toString() ?? '',
     );
   }
 
@@ -89,10 +101,17 @@ class CommunityComment {
     return const <String>[];
   }
 
+  /// 兼容 List / null → List<dynamic>
+  static List<dynamic> _toList(dynamic v) {
+    if (v is List) return v;
+    return const <dynamic>[];
+  }
+
   CommunityComment copyWith({
     int? likeCount,
     bool? likedByMe,
     int? replyCount,
+    List<CommunityComment>? replies,
   }) {
     return CommunityComment(
       id: id,
@@ -106,11 +125,14 @@ class CommunityComment {
       images: images,
       spoiler: spoiler,
       isSponsor: isSponsor,
+      title: title,
       likeCount: likeCount ?? this.likeCount,
       replyCount: replyCount ?? this.replyCount,
       reportCount: reportCount,
       likedByMe: likedByMe ?? this.likedByMe,
       createdAt: createdAt,
+      replies: replies ?? this.replies,
+      parentNickname: parentNickname,
     );
   }
 }
@@ -135,6 +157,45 @@ class CommunityCommentsService {
   static final CommunityCommentsService instance =
       CommunityCommentsService._();
 
+  /// ---- 一级评论缓存（避免切换界面重复请求）----
+  /// key = "kind:targetId:sort"，仅在退出视频页 / 主动刷新 / 排序切换时清除
+  static final Map<String, ({List<CommunityComment> items, int total})> _cache =
+      {};
+
+  static String _cacheKey(String kind, int targetId, CommunitySort sort) =>
+      '$kind:$targetId:${sort.value}';
+
+  /// 读取缓存（无缓存返回 null）
+  static ({List<CommunityComment> items, int total})? cached(
+    String kind,
+    int targetId,
+    CommunitySort sort,
+  ) {
+    return _cache[_cacheKey(kind, targetId, sort)];
+  }
+
+  /// 写入缓存（仅主评论列表）
+  static void cacheStore(
+    String kind,
+    int targetId,
+    CommunitySort sort,
+    List<CommunityComment> items,
+    int total,
+  ) {
+    _cache[_cacheKey(kind, targetId, sort)] = (items: items, total: total);
+  }
+
+  /// 清除缓存：传 kind+targetId 只清该评论区；不传则全部清除
+  static void clearCache({String? kind, int? targetId}) {
+    if (kind == null || targetId == null) {
+      _cache.clear();
+      return;
+    }
+    _cache.removeWhere(
+      (key, _) => key.startsWith('$kind:$targetId:'),
+    );
+  }
+
   String get _baseUrl {
     var base =
         GStorage.getSetting(SettingsKeys.remoteResolverBaseUrl).trim();
@@ -148,7 +209,7 @@ class CommunityCommentsService {
       GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
 
   /// 拉取评论列表（游客可读）
-  /// [parentId] 为 0 时拉主评论；>0 时拉某条评论的回复
+  /// [parentId] 为 0 时拉主评论（成功后写入一级缓存）；>0 时拉某条评论的回复
   Future<({List<CommunityComment> items, int total})> list({
     required String kind,
     required int targetId,
@@ -175,13 +236,16 @@ class CommunityCommentsService {
     if (data['code'] != 0 || data['items'] is! List) {
       return (items: const <CommunityComment>[], total: 0);
     }
-    return (
-      items: [
-        for (final it in data['items'] as List)
-          if (it is Map) CommunityComment.fromJson(it.cast<String, dynamic>())
-      ],
-      total: (data['total'] as num?)?.toInt() ?? 0,
-    );
+    final items = [
+      for (final it in data['items'] as List)
+        if (it is Map) CommunityComment.fromJson(it.cast<String, dynamic>())
+    ];
+    final total = (data['total'] as num?)?.toInt() ?? 0;
+    // 主评论列表写入一级缓存
+    if (parentId == 0) {
+      cacheStore(kind, targetId, sort, items, total);
+    }
+    return (items: items, total: total);
   }
 
   /// 发表评论/回复（需登录）
