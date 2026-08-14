@@ -1001,7 +1001,9 @@ class _RatingBarState extends State<_RatingBar> {
             _count > 0 ? '（${_count}人评分）' : '（暂无评分）',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
-const Spacer(),
+            ),
+          ),
+          const Spacer(),
           if (_myScore > 0)
             for (var i = 1; i <= 5; i++)
               InkWell(
@@ -1040,8 +1042,6 @@ const Spacer(),
                     ),
                   ],
                 ),
-              ),
-            ),
               ),
             ),
         ],
