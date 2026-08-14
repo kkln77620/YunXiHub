@@ -304,6 +304,12 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   description: Text(AuthService.instance.title),
                 ),
                 SettingsTile(
+                  leading: Icons.redeem_rounded,
+                  onPressed: (_) => context.pushNamed('/settings/redeem/'),
+                  title: const Text('兑换码'),
+                  description: const Text('兑换积分与赞助用户时长'),
+                ),
+                SettingsTile(
                   leading: Icons.logout_rounded,
                   onPressed: (_) async => _logout(),
                   title: const Text('退出登录'),

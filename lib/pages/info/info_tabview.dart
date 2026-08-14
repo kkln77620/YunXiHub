@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
@@ -7,6 +8,9 @@ import 'package:kazumi/bean/card/character_card.dart';
 import 'package:kazumi/bean/card/staff_card.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/pages/comments/community_comments_view.dart';
+import 'package:kazumi/services/remote/auth_service.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
+import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
@@ -42,6 +46,8 @@ class InfoTabView extends StatefulWidget {
     required this.staffList,
     required this.relationList,
     required this.isLoading,
+    this.commentSourceNotifier,
+    this.commentsController,
   });
 
   final bool commentsQueryTimeout;
@@ -66,6 +72,8 @@ class InfoTabView extends StatefulWidget {
   final List<StaffFullItem> staffList;
   final List<BangumiRelation> relationList;
   final bool isLoading;
+  final ValueNotifier<int>? commentSourceNotifier;
+  final CommunityCommentsController? commentsController;
 
   @override
   State<InfoTabView> createState() => _InfoTabViewState();
@@ -353,22 +361,22 @@ class _InfoTabViewState extends State<InfoTabView>
       builder: (BuildContext context) {
         if (_commentSource == 1) {
           // b 区：YunXiHub 社区评论（可发表）
-          return CustomScrollView(
-            scrollBehavior: const ScrollBehavior().copyWith(
-              scrollbars: false,
-            ),
-            key: PageStorageKey<String>('吐槽-社区'),
-            slivers: <Widget>[
-              SliverOverlapInjector(
-                handle:
-                    NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          // 与剧集评论保持一致的嵌入方式（Column + Expanded），
+          // 避免 SliverFillRemaining 包裹导致回复弹层/滚动异常
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _commentSourceSwitch(),
+              _RatingBar(
+                kind: 'subject',
+                targetId: widget.bangumiItem.id,
               ),
-              SliverToBoxAdapter(child: _commentSourceSwitch()),
-              SliverFillRemaining(
-                hasScrollBody: true,
+              Expanded(
                 child: CommunityCommentsView(
+                  key: ValueKey<int>(widget.bangumiItem.id),
                   kind: 'subject',
                   targetId: widget.bangumiItem.id,
+                  controller: widget.commentsController,
                 ),
               ),
             ],
@@ -533,8 +541,10 @@ class _InfoTabViewState extends State<InfoTabView>
               ),
             ],
             selected: {_commentSource},
-            onSelectionChanged: (s) =>
-                setState(() => _commentSource = s.first),
+            onSelectionChanged: (s) {
+              setState(() => _commentSource = s.first);
+              widget.commentSourceNotifier?.value = s.first;
+            },
             showSelectedIcon: false,
             style: const ButtonStyle(
               visualDensity: VisualDensity.compact,
@@ -850,6 +860,155 @@ class _RelatedBangumiCardH extends StatelessWidget {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 番剧评分条（0-5 星，纯打分；显示平均分 + 我的评分；登录后可点）
+class _RatingBar extends StatefulWidget {
+  const _RatingBar({required this.kind, required this.targetId});
+
+  final String kind;
+  final int targetId;
+
+  @override
+  State<_RatingBar> createState() => _RatingBarState();
+}
+
+class _RatingBarState extends State<_RatingBar> {
+  double _avg = 0;
+  int _count = 0;
+  int _myScore = 0;
+  bool _loading = true;
+
+  Dio get _dio {
+    final token = GStorage.getSetting(SettingsKeys.authToken).trim();
+    return Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 30),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+      },
+    ));
+  }
+
+  String get _baseUrl {
+    var base = GStorage.getSetting(SettingsKeys.remoteResolverBaseUrl).trim();
+    while (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    return base;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final token =
+          GStorage.getSetting(SettingsKeys.authToken).trim();
+      final resp = await _dio.get(
+        '$_baseUrl/api/ratings/summary',
+        queryParameters: {
+          'kind': widget.kind,
+          'target_id': widget.targetId,
+          if (token.isNotEmpty) 'token': token,
+        },
+      );
+      final data = (resp.data is Map)
+          ? (resp.data as Map).cast<String, dynamic>()
+          : <String, dynamic>{};
+      if (data['code'] == 0 && mounted) {
+        setState(() {
+          _avg = (data['avg'] as num?)?.toDouble() ?? 0;
+          _count = (data['count'] as num?)?.toInt() ?? 0;
+          _myScore = (data['my_score'] as num?)?.toInt() ?? 0;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _submit(int score) async {
+    final token = GStorage.getSetting(SettingsKeys.authToken).trim();
+    if (token.isEmpty) {
+      KazumiDialog.showToast(message: '请先登录账号');
+      return;
+    }
+    final target = score == _myScore ? 0 : score; // 再点当前星级 = 取消评分
+    try {
+      final resp = await _dio.post(
+        '$_baseUrl/api/ratings/submit',
+        data: {
+          'kind': widget.kind,
+          'target_id': widget.targetId,
+          'score': target,
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      final data = (resp.data is Map)
+          ? (resp.data as Map).cast<String, dynamic>()
+          : <String, dynamic>{};
+      if (data['code'] == 0) {
+        KazumiDialog.showToast(
+            message: target == 0 ? '已取消评分' : '评分成功 ${target} 星');
+        _load();
+      } else {
+        KazumiDialog.showToast(
+            message: data['msg']?.toString() ?? '评分失败');
+      }
+    } catch (_) {
+      KazumiDialog.showToast(message: '评分失败，请检查网络');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: [
+          Icon(Icons.star_rounded, size: 18, color: Colors.amber),
+          const SizedBox(width: 4),
+          Text(
+            _loading ? '--' : _avg.toStringAsFixed(1),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _count > 0 ? '（${_count}人评分）' : '（暂无评分）',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          for (var i = 1; i <= 5; i++)
+            InkWell(
+              onTap: () => _submit(i),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Icon(
+                  i <= _myScore
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  size: 20,
+                  color: i <= _myScore ? Colors.amber : colorScheme.outline,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

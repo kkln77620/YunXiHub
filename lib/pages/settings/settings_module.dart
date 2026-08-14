@@ -11,6 +11,8 @@ import 'package:kazumi/pages/settings/displaymode_settings.dart';
 import 'package:kazumi/pages/settings/download_settings.dart';
 import 'package:kazumi/pages/settings/interface_settings.dart';
 import 'package:kazumi/pages/settings/keyboard_settings.dart';
+import 'package:kazumi/pages/settings/exam/exam_page.dart';
+import 'package:kazumi/pages/settings/redeem/redeem_page.dart';
 import 'package:kazumi/pages/settings/player_settings.dart';
 import 'package:kazumi/pages/settings/proxy/proxy_module.dart';
 import 'package:kazumi/pages/settings/renderer_settings.dart';
@@ -25,6 +27,8 @@ final settingsModule = createModule(
     c
       ..route('/', child: (context, state) => const SettingsPage())
       ..route('/account', child: (context, state) => const AccountSettingsPage())
+      ..route('/exam', child: (context, state) => const ExamPage())
+      ..route('/redeem', child: (context, state) => const RedeemPage())
       ..route('/theme', child: (context, state) => const ThemeSettingsPage())
       ..route(
         '/theme/display',

@@ -19,6 +19,7 @@ class CommunityComment {
   final bool spoiler;
   final bool isSponsor;
   final String title; // 头衔：管理员 / 赞助用户 / 普通用户（服务器实时计算）
+  final int level; // 用户等级 L0-L9（服务器实时计算，头衔旁展示）
   final int likeCount;
   final int replyCount;
   final int reportCount;
@@ -63,6 +64,7 @@ class CommunityComment {
       spoiler: _toBool(j['spoiler']),
       isSponsor: _toBool(j['is_sponsor']),
       title: j['title']?.toString() ?? '',
+      level: _toInt(j['level']),
       likeCount: _toInt(j['like_count']),
       replyCount: _toInt(j['reply_count']),
       reportCount: _toInt(j['report_count']),
@@ -126,6 +128,7 @@ class CommunityComment {
       spoiler: spoiler,
       isSponsor: isSponsor,
       title: title,
+      level: level,
       likeCount: likeCount ?? this.likeCount,
       replyCount: replyCount ?? this.replyCount,
       reportCount: reportCount,
@@ -203,6 +206,7 @@ class CommunityCommentsService {
       spoiler: spoiler,
       isSponsor: AuthService.instance.vipLevel > 0,
       title: AuthService.instance.title == '普通用户' ? '' : AuthService.instance.title,
+      level: AuthService.instance.level,
       likeCount: 0,
       replyCount: 0,
       reportCount: 0,

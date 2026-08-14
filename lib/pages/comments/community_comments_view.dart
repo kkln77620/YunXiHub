@@ -12,7 +12,15 @@ import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
-/// YunXiHub 社区评论视图（b 区）v4
+/// 社区评论外部控制器：供页面 FAB 等外部入口触发"写评论"
+class CommunityCommentsController {
+  void Function()? _compose;
+
+  /// 打开写评论弹窗（FAB 用）
+  void openComposer() => _compose?.call();
+}
+
+/// YunXiHub 社区评论视图（b 区）v5
 ///
 /// 模型：**区域级二级页（页面栈）**
 /// - 一级：主评论列表（每条主评论下方显示前 3 条回复预览）
@@ -31,6 +39,7 @@ class CommunityCommentsView extends StatefulWidget {
     super.key,
     required this.kind,
     required this.targetId,
+    this.controller,
     this.highlightCommentId,
     this.autoOpenRepliesCommentId,
   });
@@ -38,6 +47,9 @@ class CommunityCommentsView extends StatefulWidget {
   /// subject | episode | character
   final String kind;
   final int targetId;
+
+  /// 外部控制器（FAB 触发写评论）
+  final CommunityCommentsController? controller;
 
   /// 定位高亮（消息跳转用），只执行一次
   final int? highlightCommentId;
@@ -70,6 +82,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._compose = () => _openComposer();
     final cached =
         CommunityCommentsService.cached(widget.kind, widget.targetId, _sort);
     if (cached != null) {
@@ -544,6 +557,33 @@ class _TitleBadge extends StatelessWidget {
   }
 }
 
+/// 等级徽标（L0-L9，L0 不显示）
+class _LevelBadge extends StatelessWidget {
+  const _LevelBadge({required this.level});
+
+  final int level;
+
+  @override
+  Widget build(BuildContext context) {
+    if (level <= 0) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: colorScheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        'L$level',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colorScheme.onTertiaryContainer,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
 /// 单条主评论（一级）：内容 + 操作行 + 回复预览（前3条）
 class _CommunityCommentTile extends StatefulWidget {
   const _CommunityCommentTile({
@@ -794,6 +834,10 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
               if (comment.title.isNotEmpty) ...[
                 const SizedBox(width: 6),
                 _TitleBadge(title: comment.title),
+              ],
+              if (comment.level > 0) ...[
+                const SizedBox(width: 6),
+                _LevelBadge(level: comment.level),
               ],
               const Spacer(),
               Text(
@@ -1696,6 +1740,10 @@ class _ReplyTileState extends State<_ReplyTile> {
                       if (comment.title.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         _TitleBadge(title: comment.title),
+                      ],
+                      if (comment.level > 0) ...[
+                        const SizedBox(width: 6),
+                        _LevelBadge(level: comment.level),
                       ],
                     ],
                   ),

@@ -15,6 +15,7 @@ import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/bean/card/network_img_layer.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/pages/info/info_tabview.dart';
+import 'package:kazumi/pages/comments/community_comments_view.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
@@ -66,6 +67,9 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
   bool staffIsEmpty = false;
   bool _showBangumiInfoSkeleton = false;
   int _fabTabIndex = 0;
+  final ValueNotifier<int> _commentSource = ValueNotifier<int>(0);
+  final CommunityCommentsController _commentsController =
+      CommunityCommentsController();
 
   BangumiItem get inputBangumiIten => widget.inputBangumiItem;
 
@@ -302,6 +306,7 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
     infoController.clearRelations();
     infoController.pluginSearchResponseList.clear();
     infoTabController.dispose();
+    _commentSource.dispose();
     super.dispose();
   }
 
@@ -496,15 +501,29 @@ class _InfoPageState extends State<InfoPage> with TickerProviderStateMixin {
                 relationsHasLoaded: infoController.relationsHasLoaded,
                 loadRelations: loadRelations,
                 isLoading: showBangumiInfoSkeleton,
+                commentSourceNotifier: _commentSource,
+                commentsController: _commentsController,
               );
             }),
           ),
           floatingActionButton: showRatingFab
-              ? FloatingActionButton.extended(
-                  tooltip: '吐槽',
-                  onPressed: onBangumiRatingTap,
-                  label: const Text('发表吐槽'),
-                  icon: const Icon(Icons.rate_review_rounded),
+              ? ValueListenableBuilder<int>(
+                  valueListenable: _commentSource,
+                  builder: (context, source, _) {
+                    // 吐槽 tab 内：Bangumi 评论 → 发表吐槽；社区评论 → 写评论
+                    final inCommunity =
+                        infoTabController.index == 1 && source == 1;
+                    return FloatingActionButton.extended(
+                      tooltip: inCommunity ? '写评论' : '吐槽',
+                      onPressed: inCommunity
+                          ? _commentsController.openComposer
+                          : onBangumiRatingTap,
+                      label: Text(inCommunity ? '写评论' : '发表吐槽'),
+                      icon: Icon(inCommunity
+                          ? Icons.edit_rounded
+                          : Icons.rate_review_rounded),
+                    );
+                  },
                 )
               : FloatingActionButton.extended(
                   tooltip: '开始观看',

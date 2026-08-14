@@ -480,6 +480,26 @@ class SettingsKeys {
     0,
     group: SettingGroup.misc,
   );
+  static const authUid = SettingKey<int>(
+    'authUid',
+    0,
+    group: SettingGroup.misc,
+  );
+  static const authLevel = SettingKey<int>(
+    'authLevel',
+    0,
+    group: SettingGroup.misc,
+  );
+  static const authTotalExp = SettingKey<int>(
+    'authTotalExp',
+    0,
+    group: SettingGroup.misc,
+  );
+  static const authExamPassed = SettingKey<int>(
+    'authExamPassed',
+    0,
+    group: SettingGroup.misc,
+  );
   static const authSelectedTitle = SettingKey<String>(
     'authSelectedTitle',
     '',

@@ -1,8 +1,10 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/player/controller/player_debug_controller.dart';
@@ -113,6 +115,64 @@ abstract class _PlayerPlaybackController with Store {
   Duration duration = Duration.zero;
   @observable
   double playerSpeed = 1.0;
+
+  /// 观看时长经验上报定时器（每 60 秒，仅登录且播放中时上报）
+  Timer? _watchReportTimer;
+
+  /// 启动观看时长上报（打开播放器后调用）
+  void startWatchReport() {
+    _watchReportTimer ??= Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => reportWatchSeconds(60),
+    );
+  }
+
+  /// 停止观看时长上报（退出播放器时调用）
+  void stopWatchReport() {
+    _watchReportTimer?.cancel();
+    _watchReportTimer = null;
+  }
+
+  /// 上报观看秒数换经验（1秒=1经验；服务器端 60 秒节流）
+  void reportWatchSeconds(int seconds) {
+    if (!playing || seconds <= 0) return;
+    final token = GStorage.getSetting(SettingsKeys.authToken).trim();
+    if (token.isEmpty) return;
+    var base =
+        GStorage.getSetting(SettingsKeys.remoteResolverBaseUrl).trim();
+    while (base.endsWith('/')) {
+      base = base.substring(0, base.length - 1);
+    }
+    try {
+      Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 15),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      )).post<dynamic>(
+        '$base/api/watch/report',
+        data: {'seconds': seconds},
+      ).then((resp) {
+        final data = (resp.data is Map)
+            ? (resp.data as Map).cast<String, dynamic>()
+            : <String, dynamic>{};
+        if (data['code'] == 0 && data['level'] is num) {
+          final lv = (data['level'] as num).toInt();
+          final oldLv = GStorage.getSetting(SettingsKeys.authLevel);
+          final exp = (data['exp'] as num?)?.toInt() ?? 0;
+          GStorage.putSetting(SettingsKeys.authTotalExp, exp);
+          if (lv != oldLv) {
+            GStorage.putSetting(SettingsKeys.authLevel, lv);
+            KazumiDialog.showToast(message: '🎉 升级了！当前等级 L$lv');
+          }
+        }
+      }).catchError((_) {});
+    } catch (_) {
+      // 静默：上报失败不影响播放
+    }
+  }
 
   bool isCurrentPlayer(Player player) {
     return identical(mediaPlayer, player);
@@ -422,7 +482,7 @@ abstract class _PlayerPlaybackController with Store {
       if (cachePolicy.networkForced) {
         KazumiDialog.showToast(message: '正在使用移动数据，已临时启用低内存模式以减少缓存');
       }
-
+      startWatchReport();
       return player;
     } catch (error, stackTrace) {
       if (identical(_ownedPlayer, candidate)) {
@@ -569,6 +629,7 @@ abstract class _PlayerPlaybackController with Store {
   }
 
   Future<void> stop() async {
+    stopWatchReport();
     cachePolicy.stopWatching();
     final ownedPlayer = _ownedPlayer;
     _ownedPlayer = null;

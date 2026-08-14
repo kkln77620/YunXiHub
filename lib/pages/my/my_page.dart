@@ -226,6 +226,14 @@ class _MyPageState extends State<MyPage> {
       outerRadius: _cardRadius,
       children: [
         SettingsCategoryTile(
+          icon: Icons.school_rounded,
+          title: '入站考核',
+          description: AuthService.instance.examPassed == 1
+              ? '已通过考核 · 当前等级 L${AuthService.instance.level}'
+              : '未考核（L0）· 考核通过后升级 L1，解锁发言权益',
+          onTap: () => context.pushNamed('/settings/exam/'),
+        ),
+        SettingsCategoryTile(
           icon: Icons.history_rounded,
           title: '历史记录',
           description: '观看记录与续播',
@@ -263,7 +271,9 @@ class _MyPageState extends State<MyPage> {
         ? (nickname.isNotEmpty ? nickname : (email.isNotEmpty ? email : '账号'))
         : '登录 / 注册';
     final String subtitle = loggedIn
-        ? (email.isNotEmpty ? email : '已登录，点击管理账号')
+        ? (AuthService.instance.uid > 0
+            ? 'UID:${AuthService.instance.uid}'
+            : (email.isNotEmpty ? email : '已登录，点击管理账号'))
         : '登录、注册与赞助用户状态';
     return Material(
       color: colorScheme.surfaceContainerLow,
@@ -339,6 +349,24 @@ class _MyPageState extends State<MyPage> {
                         if (loggedIn) ...[
                           const SizedBox(width: 6),
                           _TitleBadge(title: AuthService.instance.title),
+                          if (AuthService.instance.level > 0) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: colorScheme.tertiaryContainer,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'L${AuthService.instance.level}',
+                                style: textTheme.labelSmall?.copyWith(
+                                  color: colorScheme.onTertiaryContainer,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ],
                     ),

@@ -48,6 +48,12 @@ class AuthService {
   /// 当前登录用户 ID（服务器返回，用于判断“我的评论”），0 表示未知
   int get userId => GStorage.getSetting(SettingsKeys.authUserId);
 
+  /// 用户 UID（10001 起，主页/评论展示）
+  int get uid => GStorage.getSetting(SettingsKeys.authUid);
+  int get level => GStorage.getSetting(SettingsKeys.authLevel);
+  int get totalExp => GStorage.getSetting(SettingsKeys.authTotalExp);
+  int get examPassed => GStorage.getSetting(SettingsKeys.authExamPassed);
+
   /// 头衔：管理员 > 赞助用户 > 普通用户（支持手动选择已拥有的头衔）
   String get title {
     final selected = GStorage.getSetting(SettingsKeys.authSelectedTitle).trim();
@@ -153,6 +159,10 @@ class AuthService {
     await GStorage.putSetting(SettingsKeys.authInviteCode, '');
     await GStorage.putSetting(SettingsKeys.authIsAdmin, 0);
     await GStorage.putSetting(SettingsKeys.authUserId, 0);
+    await GStorage.putSetting(SettingsKeys.authUid, 0);
+    await GStorage.putSetting(SettingsKeys.authLevel, 0);
+    await GStorage.putSetting(SettingsKeys.authTotalExp, 0);
+    await GStorage.putSetting(SettingsKeys.authExamPassed, 0);
   }
 
   /// 持久化服务器返回的 user 信息（登录/刷新/改资料共用）
@@ -184,6 +194,22 @@ class AuthService {
     await GStorage.putSetting(
       SettingsKeys.authUserId,
       (user['id'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authUid,
+      (user['uid'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authLevel,
+      (user['level'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authTotalExp,
+      (user['total_exp'] as num?)?.toInt() ?? 0,
+    );
+    await GStorage.putSetting(
+      SettingsKeys.authExamPassed,
+      (user['exam_passed'] as num?)?.toInt() ?? 0,
     );
   }
 

@@ -133,52 +133,14 @@ class _PlayerSettingsPageState extends State<WebDavSettingsPage> {
                   description: Text('使用本地 Bangumi 缓存后端加载热门与分类榜单'),
                   initialValue: enableBangumiProxy,
                 ),
-                SettingsTile.switchTile(
-                  leading: Icons.sync_rounded,
-                  onToggle: (value) async {
-                    final tBangumiEnableSync = value ?? !bangumiSyncEnable;
-                    final bangumi = BangumiSyncService();
-                    if (tBangumiEnableSync == true) {
-                      final token =
-                          GStorage.getSetting(SettingsKeys.bangumiAccessToken)
-                              .trim();
-                      if (token.isEmpty) {
-                        KazumiDialog.showToast(
-                            message: '请先配置 Bangumi 的 Access Token');
-                        return;
-                      } else {
-                        if (!bangumi.initialized) {
-                          try {
-                            await bangumi.init();
-                          } catch (e) {
-                            KazumiDialog.showToast(
-                                message: "Bangumi 初始化失败，请稍后再试");
-                            return;
-                          }
-                        }
-                      }
-                    }
-                    bangumiSyncEnable = tBangumiEnableSync;
-                    await GStorage.putSetting(
-                        SettingsKeys.bangumiSyncEnable, bangumiSyncEnable);
-                    if (!mounted) {
-                      return;
-                    }
-                    setState(() {});
-                  },
-                  title: Text('Bangumi 同步'),
-                  description: Text('允许与Bangumi自动同步收藏/追番状态'),
-                  initialValue: bangumiSyncEnable,
-                ),
                 SettingsTile(
                   leading: Icons.tune_rounded,
                   onPressed: (_) async {
                     await context.pushNamed('/settings/bangumi/');
-                    bangumiSyncEnable =
-                        GStorage.getSetting(SettingsKeys.bangumiSyncEnable);
                     setState(() {});
                   },
                   title: Text('Bangumi 配置'),
+                  description: Text('绑定 Access Token 以发表吐槽/评分'),
                 ),
               ],
             ),
