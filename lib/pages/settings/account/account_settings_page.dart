@@ -264,6 +264,30 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
     return '赞助用户';
   }
 
+  /// 等级累计经验阈值（L2..L9 所需累计经验，与服务器一致）
+  static const List<int> _expThresholds = [
+    1000, 3000, 7000, 15000, 31000, 63000, 127000, 255000,
+  ];
+
+  String get _levelDesc {
+    final lv = AuthService.instance.level;
+    final exp = AuthService.instance.totalExp;
+    if (lv <= 0) return '未通过入站考核（L0）· 通过考核升级 L1';
+    if (lv >= 9) return '已满级（L9）· 累计经验 $exp';
+    final next = _expThresholds[lv - 1];
+    return '当前经验 $exp · 距 L${lv + 1} 还需 ${next - exp}';
+  }
+
+  double get _levelProgress {
+    final lv = AuthService.instance.level;
+    if (lv <= 0) return 0;
+    if (lv >= 9) return 1;
+    final next = _expThresholds[lv - 1];
+    final prev = lv <= 1 ? 0 : _expThresholds[lv - 2];
+    final p = (AuthService.instance.totalExp - prev) / (next - prev);
+    return p.clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     return SettingsDetailScaffold(
@@ -281,6 +305,25 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                   description: const Text('使用邮箱验证码注册，登录后解锁完整服务'),
                 )
               else ...[
+                SettingsTile(
+                  leading: Icons.military_tech_rounded,
+                  onPressed: (_) => context.pushNamed('/settings/exam/'),
+                  title: Text('等级 L${AuthService.instance.level}'),
+                  description: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_levelDesc),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _levelProgress,
+                          minHeight: 6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 SettingsTile(
                   leading: Icons.account_box_rounded,
                   onPressed: (_) => _editProfile(),

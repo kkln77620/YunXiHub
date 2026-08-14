@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:kazumi/services/remote/history_sync_service.dart';
+import 'package:kazumi/services/remote/messages_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -163,6 +164,7 @@ class AuthService {
     await GStorage.putSetting(SettingsKeys.authLevel, 0);
     await GStorage.putSetting(SettingsKeys.authTotalExp, 0);
     await GStorage.putSetting(SettingsKeys.authExamPassed, 0);
+    MessagesService.onDataChanged?.call();
   }
 
   /// 持久化服务器返回的 user 信息（登录/刷新/改资料共用）
@@ -301,6 +303,8 @@ class AuthService {
     // 登录/注册成功即同步历史记录，并把游客设备数据并入账号（失败静默）
     unawaited(HistorySyncService.instance.syncNow());
     unawaited(HistorySyncService.instance.mergeGuestToAccount());
+    // 通知主页立即刷新未读徽章等
+    MessagesService.onDataChanged?.call();
   }
 
   Future<Map<String, dynamic>> _post(

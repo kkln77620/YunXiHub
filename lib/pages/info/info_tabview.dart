@@ -361,22 +361,33 @@ class _InfoTabViewState extends State<InfoTabView>
       builder: (BuildContext context) {
         if (_commentSource == 1) {
           // b 区：YunXiHub 社区评论（可发表）
-          // 与剧集评论保持一致的嵌入方式（Column + Expanded），
-          // 避免 SliverFillRemaining 包裹导致回复弹层/滚动异常
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _commentSourceSwitch(),
-              _RatingBar(
-                kind: 'subject',
-                targetId: widget.bangumiItem.id,
+          // 用 CustomScrollView + SliverFillRemaining(hasScrollBody:false) 承载：
+          // 切换栏/评分条始终在列表流中（不会因切换消失），评论区内独立滚动
+          return CustomScrollView(
+            scrollBehavior: const ScrollBehavior().copyWith(
+              scrollbars: false,
+            ),
+            key: PageStorageKey<String>('吐槽-社区'),
+            slivers: <Widget>[
+              SliverOverlapInjector(
+                handle:
+                    NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               ),
-              Expanded(
+              SliverToBoxAdapter(child: _commentSourceSwitch()),
+              SliverToBoxAdapter(
+                child: _RatingBar(
+                  kind: 'subject',
+                  targetId: widget.bangumiItem.id,
+                ),
+              ),
+              SliverFillRemaining(
+                hasScrollBody: false,
                 child: CommunityCommentsView(
                   key: ValueKey<int>(widget.bangumiItem.id),
                   kind: 'subject',
                   targetId: widget.bangumiItem.id,
                   controller: widget.commentsController,
+                  hideComposerButton: true,
                 ),
               ),
             ],
@@ -990,22 +1001,47 @@ class _RatingBarState extends State<_RatingBar> {
             _count > 0 ? '（${_count}人评分）' : '（暂无评分）',
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          for (var i = 1; i <= 5; i++)
+const Spacer(),
+          if (_myScore > 0)
+            for (var i = 1; i <= 5; i++)
+              InkWell(
+                onTap: () => _submit(i),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Icon(
+                    i <= _myScore
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 20,
+                    color: i <= _myScore
+                        ? Colors.amber
+                        : colorScheme.outline,
+                  ),
+                ),
+              )
+          else
             InkWell(
-              onTap: () => _submit(i),
+              onTap: () => _submit(5),
               borderRadius: BorderRadius.circular(4),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Icon(
-                  i <= _myScore
-                      ? Icons.star_rounded
-                      : Icons.star_outline_rounded,
-                  size: 20,
-                  color: i <= _myScore ? Colors.amber : colorScheme.outline,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.star_border_rounded,
+                        size: 18, color: colorScheme.outline),
+                    const SizedBox(width: 4),
+                    Text(
+                      '评分',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+            ),
               ),
             ),
         ],

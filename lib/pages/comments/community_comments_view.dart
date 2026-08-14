@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
+
+import 'package:dio/dio.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_modular/flutter_modular.dart';
@@ -18,6 +21,24 @@ class CommunityCommentsController {
 
   /// 打开写评论弹窗（FAB 用）
   void openComposer() => _compose?.call();
+}
+
+/// 统一错误转中文提示：DioException 优先取服务器 msg（等级限制等），网络错误给通用提示
+String _commentErrText(Object e) {
+  if (e is DioException) {
+    final resp = e.response;
+    if (resp?.data != null) {
+      try {
+        final m = resp!.data is String
+            ? (jsonDecode(resp.data as String) as Map)
+            : (resp.data as Map);
+        final msg = m['msg']?.toString();
+        if (msg != null && msg.isNotEmpty) return msg;
+      } catch (_) {}
+    }
+    return '网络错误，请稍后重试';
+  }
+  return e.toString();
 }
 
 /// YunXiHub 社区评论视图（b 区）v5
@@ -42,6 +63,7 @@ class CommunityCommentsView extends StatefulWidget {
     this.controller,
     this.highlightCommentId,
     this.autoOpenRepliesCommentId,
+    this.hideComposerButton = false,
   });
 
   /// subject | episode | character
@@ -50,6 +72,9 @@ class CommunityCommentsView extends StatefulWidget {
 
   /// 外部控制器（FAB 触发写评论）
   final CommunityCommentsController? controller;
+
+  /// 隐藏底部"写评论"按钮（详情页吐槽区由 FAB 承担，避免重复入口）
+  final bool hideComposerButton;
 
   /// 定位高亮（消息跳转用），只执行一次
   final int? highlightCommentId;
@@ -166,7 +191,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
       if (!mounted) return;
       setState(() {
         _error = true;
-        _errorMsg = e.toString();
+        _errorMsg = _commentErrText(e);
         _loading = false;
       });
     }
@@ -327,7 +352,31 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
             images: images,
             spoiler: spoiler,
           );
-          _insertLocalMain(local);
+          if (parentId > 0) {
+            // 回复：插入对应主评论的回复预览（嵌套展示）+ replyCount+1；
+            // 父评论不在当前页（分页边界）时兜底插入主列表顶部
+            setState(() {
+              var found = false;
+              for (var i = 0; i < _items.length; i++) {
+                if (_items[i].id == parentId) {
+                  final c = _items[i];
+                  _items[i] = c.copyWith(
+                    replyCount: c.replyCount + 1,
+                    replies: [local, ...c.replies],
+                  );
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) {
+                _items = [local, ..._items];
+                _total += 1;
+              }
+            });
+            _syncCache();
+          } else {
+            _insertLocalMain(local);
+          }
         },
       ),
     );
@@ -404,8 +453,8 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                     ),
             ),
           ),
-          // 底部写评论（一级显示）
-          if (_stack.isEmpty)
+          // 底部写评论（一级显示；吐槽区由 FAB 承担时隐藏）
+          if (_stack.isEmpty && !widget.hideComposerButton)
             SafeArea(
               top: false,
               child: Padding(
@@ -467,6 +516,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                     onRefresh: _refresh,
                     child: ListView.separated(
                       controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                       itemCount: _items.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (_, __) => const Divider(height: 1),
@@ -666,7 +716,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _comment = old);
-      KazumiDialog.showToast(message: e.toString());
+      KazumiDialog.showToast(message: _commentErrText(e));
     }
   }
 
@@ -736,7 +786,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
       KazumiDialog.showToast(message: '举报成功，我们会尽快处理');
     } catch (e) {
       if (!mounted) return;
-      KazumiDialog.showToast(message: e.toString());
+      KazumiDialog.showToast(message: _commentErrText(e));
     }
   }
 
@@ -766,7 +816,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
       widget.onRemoveLocal();
     } catch (e) {
       if (!mounted) return;
-      KazumiDialog.showToast(message: e.toString());
+      KazumiDialog.showToast(message: _commentErrText(e));
     }
   }
 
@@ -793,7 +843,7 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
           Row(
             children: [
               CircleAvatar(
-                radius: 14,
+                radius: 19,
                 backgroundColor: colorScheme.surfaceContainerHighest,
                 backgroundImage: comment.avatar.isNotEmpty
                     ? NetworkImage(
@@ -801,45 +851,45 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
                             .resolveUrl(comment.avatar))
                     : null,
                 child: comment.avatar.isEmpty
-                    ? const Icon(Icons.person_rounded, size: 16)
+                    ? const Icon(Icons.person_rounded, size: 22)
                     : null,
               ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  displayName,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      displayName,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (_isMine)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '我',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    if (comment.title.isNotEmpty)
+                      _TitleBadge(title: comment.title),
+                    if (comment.level > 0)
+                      _LevelBadge(level: comment.level),
+                  ],
                 ),
               ),
-              if (_isMine) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '我',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSecondaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-              if (comment.title.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                _TitleBadge(title: comment.title),
-              ],
-              if (comment.level > 0) ...[
-                const SizedBox(width: 6),
-                _LevelBadge(level: comment.level),
-              ],
-              const Spacer(),
+              const SizedBox(width: 8),
               Text(
                 comment.createdAt.length >= 16
                     ? comment.createdAt.substring(5, 16)
@@ -1576,7 +1626,7 @@ class _ReplyTileState extends State<_ReplyTile> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _comment = old);
-      KazumiDialog.showToast(message: e.toString());
+      KazumiDialog.showToast(message: _commentErrText(e));
     }
   }
 
@@ -1639,7 +1689,7 @@ class _ReplyTileState extends State<_ReplyTile> {
             KazumiDialog.showToast(message: '举报成功，我们会尽快处理');
           }
         } catch (e) {
-          if (mounted) KazumiDialog.showToast(message: e.toString());
+          if (mounted) KazumiDialog.showToast(message: _commentErrText(e));
         }
       }
     } else if (action == 'delete') {
@@ -1667,7 +1717,7 @@ class _ReplyTileState extends State<_ReplyTile> {
           KazumiDialog.showToast(message: '已删除');
           widget.onRemoveLocal();
         } catch (e) {
-          if (mounted) KazumiDialog.showToast(message: e.toString());
+          if (mounted) KazumiDialog.showToast(message: _commentErrText(e));
         }
       }
     }
@@ -1897,6 +1947,7 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
   final List<String> _localImages = [];
   bool _spoiler = false;
   bool _submitting = false;
+  bool _uploadOriginal = false; // 原图模式（仅管理员可开启，默认关闭）
 
   @override
   void dispose() {
@@ -1910,7 +1961,14 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
       return;
     }
     try {
-      final files = await _picker.pickMultiImage(limit: 3 - _localImages.length);
+      // 默认压缩到最长边1920/质量85；原图模式（仅管理员）不压缩
+      final original = _uploadOriginal && AuthService.instance.isAdmin;
+      final files = await _picker.pickMultiImage(
+        limit: 3 - _localImages.length,
+        maxWidth: original ? null : 1920,
+        maxHeight: original ? null : 1920,
+        imageQuality: original ? null : 85,
+      );
       if (files.isEmpty) return;
       setState(() {
         _localImages.addAll(files.map((f) => f.path));
@@ -1947,7 +2005,7 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
       KazumiDialog.showToast(message: '评论成功');
     } catch (e) {
       if (!mounted) return;
-      KazumiDialog.showToast(message: e.toString());
+      KazumiDialog.showToast(message: _commentErrText(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -1983,12 +2041,16 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
           ),
           if (_localImages.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final p in _localImages)
-                  Stack(
+            // 图片预览：固定高度横向滑动（避免图片多时把发送键顶出屏幕）
+            SizedBox(
+              height: 88,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _localImages.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (context, i) {
+                  final p = _localImages[i];
+                  return Stack(
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
@@ -2015,8 +2077,9 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
                         ),
                       ),
                     ],
-                  ),
-              ],
+                  );
+                },
+              ),
             ),
           ],
           const SizedBox(height: 8),
@@ -2027,6 +2090,26 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
                 icon: const Icon(Icons.image_rounded, size: 18),
                 label: const Text('图片'),
               ),
+              if (_localImages.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                // 原图开关：默认压缩；仅管理员可用（暂时不对外启用）
+                OutlinedButton.icon(
+                  onPressed: () {
+                    if (!AuthService.instance.isAdmin) {
+                      KazumiDialog.showToast(message: '该功能暂未开放');
+                      return;
+                    }
+                    setState(() => _uploadOriginal = !_uploadOriginal);
+                  },
+                  icon: Icon(
+                    _uploadOriginal
+                        ? Icons.hd_rounded
+                        : Icons.hd_outlined,
+                    size: 18,
+                  ),
+                  label: Text(_uploadOriginal ? '原图:开' : '原图'),
+                ),
+              ],
               const SizedBox(width: 8),
               Row(
                 mainAxisSize: MainAxisSize.min,

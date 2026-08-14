@@ -55,6 +55,8 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
       popularController.queryBangumiByTrend();
     }
     _refreshUnread();
+    // 账号数据变更（兑换码/登录/登出）时立即刷新未读徽章
+    MessagesService.onDataChanged = _refreshUnread;
     // 定时刷新未读数（App 前台期间保持新鲜）
     _unreadTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (mounted) _refreshUnread();
@@ -111,6 +113,9 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _unreadTimer?.cancel();
+    if (MessagesService.onDataChanged == _refreshUnread) {
+      MessagesService.onDataChanged = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     scrollController.removeListener(scrollListener);
     scrollController.dispose();

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
+import 'package:kazumi/services/remote/messages_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -62,6 +63,9 @@ class _RedeemPageState extends State<RedeemPage> {
           message: data['msg']?.toString() ?? '兑换失败');
       if (data['code'] == 0) {
         _codeController.clear();
+        // 兑换成功：刷新账号信息 + 通知主页刷新（积分/消息徽章）
+        await AuthService.instance.refreshMe();
+        MessagesService.onDataChanged?.call();
       }
     } catch (_) {
       KazumiDialog.showToast(message: '兑换失败，请检查网络');
@@ -126,13 +130,6 @@ class _RedeemPageState extends State<RedeemPage> {
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '提示：兑换码分为单次码（仅限一人使用）与多次码（可多人使用），兑换后积分与赞助时长自动到账。',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
