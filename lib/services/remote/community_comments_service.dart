@@ -41,6 +41,7 @@ class CommunityComment {
     required this.spoiler,
     required this.isSponsor,
     required this.title,
+    required this.level,
     required this.likeCount,
     required this.replyCount,
     required this.reportCount,
