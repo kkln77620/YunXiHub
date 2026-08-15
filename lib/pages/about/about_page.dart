@@ -175,16 +175,7 @@ class _AboutPageState extends State<AboutPage> {
                         mode: LaunchMode.externalApplication);
                   },
                   title: Text('代码仓库'),
-                  value: Text('Github'),
-                ),
-                SettingsTile(
-                  leading: Icons.brush_rounded,
-                  onPressed: (_) {
-                    launchUrl(Uri.parse(ApiEndpoints.iconUrl),
-                        mode: LaunchMode.externalApplication);
-                  },
-                  title: Text('图标创作'),
-                  value: Text('Pixiv'),
+                  value: Text('YunXiHub'),
                 ),
                 SettingsTile(
                   leading: Icons.menu_book_rounded,
@@ -217,16 +208,17 @@ class _AboutPageState extends State<AboutPage> {
               ],
             ),
             SettingsSection(
-              title: Text('社区'),
+              title: Text('特别感谢'),
               tiles: [
                 SettingsTile(
-                  leading: Icons.send_rounded,
+                  leading: Icons.favorite_rounded,
                   onPressed: (_) {
-                    launchUrl(Uri.parse(ApiEndpoints.telegramGroup),
+                    launchUrl(Uri.parse(ApiEndpoints.upstreamUrl),
                         mode: LaunchMode.externalApplication);
                   },
-                  title: Text('Telegram'),
-                  value: Text('点击加入'),
+                  title: Text('Kazumi'),
+                  description: Text('YunXiHub 基于 Kazumi 二次开发，感谢上游项目'),
+                  value: Text('前往'),
                 ),
               ],
             ),

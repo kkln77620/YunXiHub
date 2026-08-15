@@ -10,7 +10,7 @@ class StyleString {
   static const double aspectRatio = 16 / 10;
 }
 
-const String customAppFontFamily = "MI_Sans_Regular";
+const String customAppFontFamily = "Noto Sans SC";
 
 /// Opts into the newer Material progress indicator appearance while Flutter
 /// still exposes the compatibility flag.

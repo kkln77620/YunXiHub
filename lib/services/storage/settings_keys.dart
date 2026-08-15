@@ -613,6 +613,26 @@ class SettingsKeys {
     false,
     group: SettingGroup.player,
   );
+  static const commentFilterEnabled = SettingKey<bool>(
+    'commentFilterEnabled',
+    false,
+    group: SettingGroup.player,
+  );
+  static const commentFilterKeywords = SettingKey<String>(
+    'commentFilterKeywords',
+    '',
+    group: SettingGroup.player,
+  );
+  static const commentFilterRegex = SettingKey<String>(
+    'commentFilterRegex',
+    '',
+    group: SettingGroup.player,
+  );
+  static const commentFilterMinLevel = SettingKey<int>(
+    'commentFilterMinLevel',
+    0,
+    group: SettingGroup.player,
+  );
 
   static final List<SettingKey<Object?>> all = [
     hAenable,
@@ -716,6 +736,10 @@ class SettingsKeys {
     playerControllerLayerDisappearTime,
     defaultVolume,
     playerMuted,
+    commentFilterEnabled,
+    commentFilterKeywords,
+    commentFilterRegex,
+    commentFilterMinLevel,
   ];
 
   static List<SettingKey<Object?>> byGroup(SettingGroup group) {

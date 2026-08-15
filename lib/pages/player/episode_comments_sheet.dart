@@ -9,6 +9,7 @@ import 'package:kazumi/pages/comments/community_comments_view.dart';
 import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/request/apis/bangumi_api.dart';
+import 'package:kazumi/utils/comment_filter.dart';
 
 class EpisodeCommentsSheet extends StatefulWidget {
   const EpisodeCommentsSheet({
@@ -168,12 +169,17 @@ class _EpisodeCommentsSheetState extends State<EpisodeCommentsSheet> {
                     child: IndexedSemantics(
                       index: index,
                       child: UserCommentsCard.episode(
-                        videoPageController.episodeCommentsList[index],
+                        CommentFilter.filterBangumiList(
+                                videoPageController.episodeCommentsList)
+                            .$1[index],
                       ),
                     ),
                   );
                 },
-                childCount: videoPageController.episodeCommentsList.length,
+                childCount: CommentFilter.filterBangumiList(
+                        videoPageController.episodeCommentsList)
+                    .$1
+                    .length,
                 addAutomaticKeepAlives: false,
                 addRepaintBoundaries: false,
                 addSemanticIndexes: false,

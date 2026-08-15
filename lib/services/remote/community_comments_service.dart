@@ -12,6 +12,7 @@ class CommunityComment {
   final int targetId;
   final int parentId;
   final int userId;
+  final int uid; // 用户 UID（10001 起，点击头像进主页用），0=未知
   final String nickname;
   final String avatar;
   final String content;
@@ -34,6 +35,7 @@ class CommunityComment {
     required this.targetId,
     required this.parentId,
     required this.userId,
+    required this.uid,
     required this.nickname,
     required this.avatar,
     required this.content,
@@ -58,6 +60,7 @@ class CommunityComment {
       targetId: _toInt(j['target_id']),
       parentId: _toInt(j['parent_id']),
       userId: _toInt(j['user_id']),
+      uid: _toInt(j['uid']),
       nickname: j['nickname']?.toString() ?? '',
       avatar: j['avatar']?.toString() ?? '',
       content: j['content']?.toString() ?? '',
@@ -122,6 +125,7 @@ class CommunityComment {
       targetId: targetId,
       parentId: parentId,
       userId: userId,
+      uid: uid,
       nickname: nickname,
       avatar: avatar,
       content: content,
@@ -200,6 +204,7 @@ class CommunityCommentsService {
       targetId: targetId,
       parentId: parentId,
       userId: AuthService.instance.userId,
+      uid: AuthService.instance.uid,
       nickname: nickname.isEmpty ? '我' : nickname,
       avatar: avatar,
       content: content,
@@ -270,6 +275,24 @@ class CommunityCommentsService {
 
   bool get _loggedIn =>
       GStorage.getSetting(SettingsKeys.authToken).trim().isNotEmpty;
+
+  /// 统一错误转中文提示：DioException 优先取服务器 msg，网络错误给通用提示
+  String _errText(Object e) {
+    if (e is DioException) {
+      final resp = e.response;
+      if (resp?.data != null) {
+        try {
+          final m = resp!.data is String
+              ? (jsonDecode(resp.data as String) as Map)
+              : (resp.data as Map);
+          final msg = m['msg']?.toString();
+          if (msg != null && msg.isNotEmpty) return msg;
+        } catch (_) {}
+      }
+      return '网络错误，请稍后重试';
+    }
+    return e.toString();
+  }
 
   /// 拉取评论列表（游客可读）
   /// [parentId] 为 0 时拉主评论（成功后写入一级缓存）；>0 时拉某条评论的回复

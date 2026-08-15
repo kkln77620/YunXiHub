@@ -9,12 +9,50 @@ enum MessageType {
   all('all', '全部'),
   like('like', '点赞'),
   reply('reply', '回复'),
-  mention('mention', '@我');
+  mention('mention', '@我'),
+  system('system', '系统消息'),
+  friends('friends', '好友');
 
   const MessageType(this.value, this.label);
 
   final String value;
   final String label;
+}
+
+/// 私信会话（按对方聚合）
+class DmConversation {
+  final int peerUid;
+  final String peerNickname;
+  final String peerAvatar;
+  final int peerLevel;
+  final int isSponsor;
+  final String lastContent;
+  final String lastTime;
+  final int unread;
+
+  const DmConversation({
+    required this.peerUid,
+    required this.peerNickname,
+    required this.peerAvatar,
+    this.peerLevel = 0,
+    this.isSponsor = 0,
+    this.lastContent = '',
+    this.lastTime = '',
+    this.unread = 0,
+  });
+
+  factory DmConversation.fromJson(Map<String, dynamic> j) {
+    return DmConversation(
+      peerUid: (j['peer_uid'] as num?)?.toInt() ?? 0,
+      peerNickname: j['peer_nickname']?.toString() ?? '',
+      peerAvatar: j['peer_avatar']?.toString() ?? '',
+      peerLevel: (j['peer_level'] as num?)?.toInt() ?? 0,
+      isSponsor: (j['is_sponsor'] as num?)?.toInt() ?? 0,
+      lastContent: j['last_content']?.toString() ?? '',
+      lastTime: j['last_time']?.toString() ?? '',
+      unread: (j['unread'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 /// 站内消息条目
@@ -136,6 +174,107 @@ class MessagesService {
     } catch (_) {
       // 静默
     }
+  }
+
+  /// 私信会话列表
+  Future<List<DmConversation>> conversations() async {
+    if (!_loggedIn) return const <DmConversation>[];
+    try {
+      final response = await _dio.get<dynamic>(
+        '$_baseUrl/api/messages/conversations',
+      );
+      final data = _decode(response.data);
+      if (data['code'] != 0 || data['items'] is! List) {
+        return const <DmConversation>[];
+      }
+      return [
+        for (final it in data['items'] as List)
+          if (it is Map) DmConversation.fromJson(it.cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return const <DmConversation>[];
+    }
+  }
+
+  /// 系统消息列表
+  Future<List<AppMessage>> systemMessages({
+    int offset = 0,
+    int limit = 30,
+  }) async {
+    if (!_loggedIn) return const <AppMessage>[];
+    try {
+      final response = await _dio.get<dynamic>(
+        '$_baseUrl/api/messages/detail',
+        queryParameters: {'type': 'system', 'offset': offset, 'limit': limit},
+      );
+      final data = _decode(response.data);
+      if (data['code'] != 0 || data['items'] is! List) {
+        return const <AppMessage>[];
+      }
+      return [
+        for (final it in data['items'] as List)
+          if (it is Map) AppMessage.fromJson(it.cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return const <AppMessage>[];
+    }
+  }
+
+  /// 与某人的私信聊天记录
+  Future<List<AppMessage>> dmDetail({
+    required int peerUid,
+    int offset = 0,
+    int limit = 50,
+  }) async {
+    if (!_loggedIn) return const <AppMessage>[];
+    try {
+      final response = await _dio.get<dynamic>(
+        '$_baseUrl/api/messages/detail',
+        queryParameters: {
+          'peer_uid': peerUid,
+          'offset': offset,
+          'limit': limit,
+        },
+      );
+      final data = _decode(response.data);
+      if (data['code'] != 0 || data['items'] is! List) {
+        return const <AppMessage>[];
+      }
+      return [
+        for (final it in data['items'] as List)
+          if (it is Map) AppMessage.fromJson(it.cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return const <AppMessage>[];
+    }
+  }
+
+  /// 发送私信（仅好友）
+  Future<String?> sendDm({required int toUid, required String content}) async {
+    if (!_loggedIn) return '未登录';
+    try {
+      final response = await _dio.post<dynamic>(
+        '$_baseUrl/api/messages/send',
+        data: {'to_uid': toUid, 'content': content},
+      );
+      final data = _decode(response.data);
+      if (data['code'] == 0) return null;
+      return data['msg']?.toString() ?? '发送失败';
+    } catch (_) {
+      return '网络异常，发送失败';
+    }
+  }
+
+  Map<String, dynamic> _decode(dynamic raw) {
+    if (raw is String) {
+      try {
+        return (jsonDecode(raw) as Map).cast<String, dynamic>();
+      } catch (_) {
+        return <String, dynamic>{};
+      }
+    }
+    if (raw is Map) return raw.cast<String, dynamic>();
+    return <String, dynamic>{};
   }
 
   Dio get _dio {

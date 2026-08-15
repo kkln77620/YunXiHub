@@ -6,12 +6,14 @@ import 'package:kazumi/bean/settings/settings_list.dart';
 import 'package:kazumi/pages/about/about_page.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/pages/plugin_editor/plugin_view_page.dart';
+import 'package:kazumi/pages/settings/comment_filter_settings.dart';
 import 'package:kazumi/pages/settings/danmaku/danmaku_settings.dart';
 import 'package:kazumi/pages/settings/download_settings.dart';
 import 'package:kazumi/pages/settings/interface_settings.dart';
 import 'package:kazumi/pages/settings/keyboard_settings.dart';
 import 'package:kazumi/pages/settings/player_settings.dart';
 import 'package:kazumi/pages/settings/proxy/proxy_settings_page.dart';
+import 'package:kazumi/pages/settings/social_settings_page.dart';
 import 'package:kazumi/pages/settings/theme_settings_page.dart';
 import 'package:kazumi/pages/webdav_editor/webdav_setting.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
@@ -65,6 +67,13 @@ final List<_SettingsGroup> _settingsGroups = [
         icon: Icons.keyboard_rounded,
         builder: (_) => const KeyboardSettingsPage(),
       ),
+      _SettingsCategory(
+        id: 'comment_filter',
+        label: '评论屏蔽',
+        description: '关键词、正则与等级过滤',
+        icon: Icons.visibility_off_rounded,
+        builder: (_) => const CommentFilterSettingsPage(),
+      ),
     ],
   ),
   _SettingsGroup(
@@ -109,6 +118,13 @@ final List<_SettingsGroup> _settingsGroups = [
         description: 'YunXiHub 云同步与 Bangumi 同步',
         icon: Icons.cloud_rounded,
         builder: (_) => const WebDavSettingsPage(),
+      ),
+      _SettingsCategory(
+        id: 'social',
+        label: '社交',
+        description: '好友主页展示项开关',
+        icon: Icons.people_rounded,
+        builder: (_) => const SocialSettingsPage(),
       ),
       _SettingsCategory(
         id: 'proxy',

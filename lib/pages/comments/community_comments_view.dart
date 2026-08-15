@@ -10,10 +10,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
 import 'package:kazumi/bean/widget/image_preview.dart';
+import 'package:kazumi/pages/friends/user_profile_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/community_comments_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/utils/comment_filter.dart';
 
 /// 社区评论外部控制器：供页面 FAB 等外部入口触发"写评论"
 class CommunityCommentsController {
@@ -226,6 +228,12 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
         kind: widget.kind, targetId: widget.targetId);
     await _load(refresh: true);
   }
+
+  /// 评论屏蔽过滤后的可见列表（缓存保持原样，展示层过滤）
+  List<CommunityComment> get _visibleItems =>
+      CommentFilter.filterCommunityList(_items).$1;
+
+  int get _hiddenCount => CommentFilter.filterCommunityList(_items).$2;
 
   void _changeSort(CommunitySort sort) {
     if (_sort == sort) return;
@@ -518,10 +526,10 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                      itemCount: _items.length + (_hasMore ? 1 : 0),
+                      itemCount: _visibleItems.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
-                        if (index >= _items.length) {
+                        if (index >= _visibleItems.length) {
                           return Padding(
                             padding:
                                 const EdgeInsets.symmetric(vertical: 12),
@@ -541,7 +549,7 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
                             ),
                           );
                         }
-                        final comment = _items[index];
+                        final comment = _visibleItems[index];
                         return _CommunityCommentTile(
                           key: ValueKey(comment.id),
                           comment: comment,
@@ -820,6 +828,15 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
     }
   }
 
+  /// 点击头像打开用户主页
+  void _openProfile() {
+    final uid = _comment.uid;
+    if (uid <= 0) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => UserProfilePage(uid: uid)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -842,17 +859,21 @@ class _CommunityCommentTileState extends State<_CommunityCommentTile> {
           // 头像 + 昵称 + 头衔 + 时间
           Row(
             children: [
-              CircleAvatar(
-                radius: 19,
-                backgroundColor: colorScheme.surfaceContainerHighest,
-                backgroundImage: comment.avatar.isNotEmpty
-                    ? NetworkImage(
-                        CommunityCommentsService.instance
-                            .resolveUrl(comment.avatar))
-                    : null,
-                child: comment.avatar.isEmpty
-                    ? const Icon(Icons.person_rounded, size: 22)
-                    : null,
+              InkWell(
+                borderRadius: BorderRadius.circular(19),
+                onTap: _comment.uid > 0 ? _openProfile : null,
+                child: CircleAvatar(
+                  radius: 19,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  backgroundImage: comment.avatar.isNotEmpty
+                      ? NetworkImage(
+                          CommunityCommentsService.instance
+                              .resolveUrl(comment.avatar))
+                      : null,
+                  child: comment.avatar.isEmpty
+                      ? const Icon(Icons.person_rounded, size: 22)
+                      : null,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1034,6 +1055,15 @@ class _ReplyLine extends StatelessWidget {
 
   final CommunityComment comment;
   final VoidCallback onTap;
+
+  /// 点击头像打开用户主页
+  void _openProfile(BuildContext context) {
+    final uid = comment.uid;
+    if (uid <= 0) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => UserProfilePage(uid: uid)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1742,17 +1772,28 @@ class _ReplyTileState extends State<_ReplyTile> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 12,
-              backgroundColor: colorScheme.surfaceContainerHighest,
-              backgroundImage: comment.avatar.isNotEmpty
-                  ? NetworkImage(
-                      CommunityCommentsService.instance
-                          .resolveUrl(comment.avatar))
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _comment.uid > 0
+                  ? () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              UserProfilePage(uid: _comment.uid),
+                        ),
+                      )
                   : null,
-              child: comment.avatar.isEmpty
-                  ? const Icon(Icons.person_rounded, size: 14)
-                  : null,
+              child: CircleAvatar(
+                radius: 12,
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                backgroundImage: comment.avatar.isNotEmpty
+                    ? NetworkImage(
+                        CommunityCommentsService.instance
+                            .resolveUrl(comment.avatar))
+                    : null,
+                child: comment.avatar.isEmpty
+                    ? const Icon(Icons.person_rounded, size: 14)
+                    : null,
+              ),
             ),
             const SizedBox(width: 8),
             Expanded(

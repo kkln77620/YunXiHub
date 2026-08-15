@@ -49,41 +49,67 @@ class KazumiDialog {
     bool showActionButton = false,
     String? actionLabel,
     Function()? onActionPressed,
-    Duration duration = const Duration(seconds: 2),
+    Duration duration = const Duration(milliseconds: 2500),
   }) {
-    final messenger = _resolveScaffoldMessenger(context);
     final toastContext = _resolveToastContext(context);
-    if (messenger != null && toastContext != null && toastContext.mounted) {
-      try {
-        messenger
-          ..removeCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(message),
-              behavior: SnackBarBehavior.floating,
-              width: MediaQuery.sizeOf(toastContext).width >
-                      LayoutBreakpoint.medium['width']!
-                  ? 600
-                  : null,
-              duration: duration,
-              persist: false,
-              action: showActionButton
-                  ? SnackBarAction(
-                      label: actionLabel ?? 'Dismiss',
-                      onPressed: () {
-                        onActionPressed?.call();
-                        messenger.hideCurrentSnackBar();
-                      },
-                    )
-                  : null,
+    var messenger = _resolveScaffoldMessenger(context);
+    if (messenger == null) {
+      // 根 messenger 尚未就绪：下一帧重试一次，避免提示静默丢失
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final retry = rootScaffoldMessengerKey.currentState;
+        final ctx = rootScaffoldMessengerKey.currentContext;
+        if (retry != null && ctx != null && ctx.mounted) {
+          _showSnackBar(retry, ctx, message, showActionButton, actionLabel,
+              onActionPressed, duration);
+        }
+      });
+      return;
+    }
+    if (toastContext != null && toastContext.mounted) {
+      _showSnackBar(messenger, toastContext, message, showActionButton,
+          actionLabel, onActionPressed, duration);
+    }
+  }
+
+  static void _showSnackBar(
+    ScaffoldMessengerState messenger,
+    BuildContext toastContext,
+    String message,
+    bool showActionButton,
+    String? actionLabel,
+    Function()? onActionPressed,
+    Duration duration,
+  ) {
+    try {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(message, textAlign: TextAlign.center),
+            behavior: SnackBarBehavior.floating,
+            width: MediaQuery.sizeOf(toastContext).width >
+                    LayoutBreakpoint.medium['width']!
+                ? 600
+                : null,
+            duration: duration,
+            persist: false,
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-          );
-      } catch (e) {
-        debugPrint('Kazumi Dialog Error: Failed to show toast: $e');
-      }
-    } else {
-      debugPrint(
-          'Kazumi Dialog Error: No ScaffoldMessenger available to show Toast');
+            action: showActionButton
+                ? SnackBarAction(
+                    label: actionLabel ?? '知道了',
+                    onPressed: () {
+                      messenger.hideCurrentSnackBar();
+                      onActionPressed?.call();
+                    },
+                  )
+                : null,
+          ),
+        );
+    } catch (e) {
+      debugPrint('Kazumi Toast Error: $e');
     }
   }
 
@@ -235,13 +261,19 @@ class KazumiDialog {
   static ScaffoldMessengerState? _resolveScaffoldMessenger(
     BuildContext? context,
   ) {
+    // 统一使用根 ScaffoldMessenger：SnackBar 显示在 App 根部，
+    // 不会被播放器控制层/弹窗等子页面 UI 遮挡
+    final root = rootScaffoldMessengerKey.currentState;
+    if (root != null) {
+      return root;
+    }
     if (context != null && context.mounted) {
       final scopedMessenger = ScaffoldMessenger.maybeOf(context);
       if (scopedMessenger != null) {
         return scopedMessenger;
       }
     }
-    return rootScaffoldMessengerKey.currentState;
+    return null;
   }
 
   static BuildContext? _resolveToastContext(BuildContext? context) {
@@ -429,8 +461,9 @@ class KazumiDialogObserver extends NavigatorObserver {
       _snackBarClearScheduled = false;
       // Route observer callbacks run while Navigator is reconciling routes.
       // Clearing the root messenger after the frame avoids mutating UI state
-      // in the middle of that reconciliation.
-      rootScaffoldMessengerKey.currentState?.removeCurrentSnackBar();
+      // in the middle of that reconciliation. Use hideCurrentSnackBar so the
+      // toast animates away instead of vanishing instantly.
+      rootScaffoldMessengerKey.currentState?.hideCurrentSnackBar();
     });
   }
 }

@@ -9,13 +9,13 @@ class ApiEndpoints {
   static const String yunxiBase = 'https://yunxi.yunxiapp.eu.cc';
 
   /// 项目主页
-  static const String projectUrl = "https://kazumi.app/";
+  static const String projectUrl = 'https://yunxi.yunxiapp.eu.cc';
 
   /// Github 项目主页
-  static const String sourceUrl = "https://github.com/Predidit/Kazumi";
+  static const String sourceUrl = "https://github.com/kkln77620/YunXiHub";
 
-  /// 图标作者
-  static const String iconUrl = "https://www.pixiv.net/users/66219277";
+  /// 上游项目（特别致谢 Kazumi）
+  static const String upstreamUrl = "https://github.com/Predidit/Kazumi";
 
   /// 规则仓库（本地构建内置；启动时热更新走 YunXiHub 服务器）
   static const String pluginShop =

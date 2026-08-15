@@ -12,6 +12,7 @@ import 'package:kazumi/utils/constants.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/random_anime_service.dart';
 import 'package:kazumi/services/remote/messages_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
@@ -36,6 +37,16 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
 
   // Key used to position the dropdown menu for the tag selector
   final GlobalKey selectorKey = GlobalKey();
+
+  /// 随机番剧模式
+  static const String kRandomTag = '🎲 随机番剧';
+  bool _randomMode = false;
+  List<BangumiItem> _randomItems = [];
+  bool _randomLoading = false;
+  bool _randomError = false;
+  List<String> _randomTags = [];
+  int _randomYearMin = 0;
+  int _randomYearMax = 0;
 
   /// 未读消息数（主页右上角信封红点）
   int _unreadCount = 0;
@@ -110,6 +121,74 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
     _refreshUnread();
   }
 
+  // ==================== 随机番剧 ====================
+
+  Future<void> _loadRandom() async {
+    setState(() {
+      _randomLoading = true;
+      _randomError = false;
+    });
+    try {
+      final items = await RandomAnimeService.instance.fetch(
+        tags: _randomTags,
+        yearMin: _randomYearMin,
+        yearMax: _randomYearMax,
+        count: 30,
+      );
+      if (!mounted) return;
+      setState(() {
+        _randomItems = items;
+        _randomLoading = false;
+      });
+      if (items.isEmpty) {
+        KazumiDialog.showToast(message: '没有符合条件的番剧，换个筛选试试');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _randomError = true;
+        _randomLoading = false;
+      });
+    }
+  }
+
+  void _enterRandomMode() {
+    setState(() {
+      _randomMode = true;
+      _randomItems = [];
+    });
+    _loadRandom();
+  }
+
+  void _exitRandomMode() {
+    setState(() {
+      _randomMode = false;
+      _randomItems = [];
+      _randomTags = [];
+      _randomYearMin = 0;
+      _randomYearMax = 0;
+    });
+  }
+
+  /// 随机番剧筛选对话框：tag 多选 + 年份区间
+  Future<void> _showRandomFilter() async {
+    final result = await showDialog<({List<String> tags, int yearMin, int yearMax})>(
+      context: context,
+      builder: (dialogContext) => _RandomFilterDialog(
+        initialTags: _randomTags,
+        initialYearMin: _randomYearMin,
+        initialYearMax: _randomYearMax,
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _randomTags = result.tags;
+      _randomYearMin = result.yearMin;
+      _randomYearMax = result.yearMax;
+    });
+    _loadRandom();
+  }
+
   @override
   void dispose() {
     _unreadTimer?.cancel();
@@ -163,6 +242,45 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(
                   StyleString.cardSpace, 0, StyleString.cardSpace, 0),
               sliver: Observer(builder: (_) {
+                if (_randomMode) {
+                  if (_randomLoading) {
+                    return const SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 300,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    );
+                  }
+                  if (_randomError) {
+                    return SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 300,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('随机番剧加载失败'),
+                              const SizedBox(height: 8),
+                              FilledButton.tonal(
+                                onPressed: _loadRandom,
+                                child: const Text('重试'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  if (_randomItems.isEmpty) {
+                    return const SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 200,
+                        child: Center(child: Text('没有符合条件的番剧，点击筛选调整范围')),
+                      ),
+                    );
+                  }
+                  return contentGrid(_randomItems);
+                }
                 if (popularController.isTimeOut) {
                   return SliverToBoxAdapter(
                     child: SizedBox(
@@ -263,34 +381,82 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
                 child: Padding(
                   padding: const EdgeInsets.only(
                       left: 16, top: 8, bottom: 8, right: 60),
-                  child: SizedBox(
-                    height: 44,
-                    child: Observer(
-                      builder: (_) {
-                        final bool isTrend = popularController.currentTag == '';
-                        return InkWell(
-                          key: selectorKey,
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: showTagMenu,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                isTrend ? '热门番组' : popularController.currentTag,
-                                style: theme.textTheme.headlineMedium!.copyWith(
-                                  fontWeight: fontWeight,
-                                  fontSize: fontSize,
+                    child: SizedBox(
+                      height: 44,
+                      child: Observer(
+                        builder: (_) {
+                          if (_randomMode) {
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(
+                                  key: selectorKey,
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: showTagMenu,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '随机番剧',
+                                        style: theme.textTheme.headlineMedium!
+                                            .copyWith(
+                                          fontWeight: fontWeight,
+                                          fontSize: fontSize,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Icon(Icons.keyboard_arrow_down,
+                                          size: fontSize,
+                                          color: theme.iconTheme.color),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(Icons.keyboard_arrow_down,
-                                  size: fontSize, color: theme.iconTheme.color),
-                            ],
-                          ),
-                        );
-                      },
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  tooltip: '筛选（tag/年份）',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: _showRandomFilter,
+                                  icon: const Icon(Icons.tune_rounded, size: 20),
+                                ),
+                                IconButton(
+                                  tooltip: '重新随机',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: _randomLoading ? null : _loadRandom,
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      size: 20),
+                                ),
+                              ],
+                            );
+                          }
+                          final bool isTrend =
+                              popularController.currentTag == '';
+                          return InkWell(
+                            key: selectorKey,
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: showTagMenu,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  isTrend
+                                      ? '热门番组'
+                                      : popularController.currentTag,
+                                  style: theme.textTheme.headlineMedium!
+                                      .copyWith(
+                                    fontWeight: fontWeight,
+                                    fontSize: fontSize,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.keyboard_arrow_down,
+                                    size: fontSize,
+                                    color: theme.iconTheme.color),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
                 ),
               );
             },
@@ -365,6 +531,7 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
             maxWidth: 80,
             items: [
               '',
+              kRandomTag,
               ...defaultAnimeTags,
             ],
             itemBuilder: (item) => item.isEmpty ? '热门番组' : item,
@@ -376,6 +543,18 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
     );
 
     if (selected == null) return;
+    // 随机番剧模式切换
+    if (selected == kRandomTag) {
+      if (_randomMode) {
+        _exitRandomMode();
+      } else {
+        _enterRandomMode();
+      }
+      return;
+    }
+    if (_randomMode) {
+      _exitRandomMode();
+    }
     if (selected == '' && popularController.currentTag != '') {
       scrollController.animateTo(0,
           duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
@@ -390,5 +569,163 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
       popularController.setCurrentTag(selected);
       await popularController.queryBangumiByTag(type: 'init');
     }
+  }
+}
+
+/// 随机番剧筛选对话框：tag 多选 + 年份区间
+class _RandomFilterDialog extends StatefulWidget {
+  const _RandomFilterDialog({
+    required this.initialTags,
+    required this.initialYearMin,
+    required this.initialYearMax,
+  });
+
+  final List<String> initialTags;
+  final int initialYearMin;
+  final int initialYearMax;
+
+  @override
+  State<_RandomFilterDialog> createState() => _RandomFilterDialogState();
+}
+
+class _RandomFilterDialogState extends State<_RandomFilterDialog> {
+  late final Set<String> _tags = widget.initialTags.toSet();
+  late int _yearMin = widget.initialYearMin;
+  late int _yearMax = widget.initialYearMax;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return AlertDialog(
+      title: const Text('随机范围'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'TAG（可多选，留空=全部）',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final tag in defaultAnimeTags)
+                    FilterChip(
+                      label: Text(tag, style: const TextStyle(fontSize: 12)),
+                      visualDensity: VisualDensity.compact,
+                      selected: _tags.contains(tag),
+                      onSelected: (v) => setState(() {
+                        if (v) {
+                          _tags.add(tag);
+                        } else {
+                          _tags.remove(tag);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '年份区间',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _yearMin == 0 ? 0 : _yearMin,
+                      isDense: true,
+                      decoration: const InputDecoration(
+                        labelText: '起始年',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 0,
+                          child: Text('不限'),
+                        ),
+                        for (final y in _years())
+                          DropdownMenuItem(value: y, child: Text('$y')),
+                      ],
+                      onChanged: (v) => setState(() => _yearMin = v ?? 0),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _yearMax == 0 ? 0 : _yearMax,
+                      isDense: true,
+                      decoration: const InputDecoration(
+                        labelText: '结束年',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 0,
+                          child: Text('不限'),
+                        ),
+                        for (final y in _years())
+                          DropdownMenuItem(value: y, child: Text('$y')),
+                      ],
+                      onChanged: (v) => setState(() => _yearMax = v ?? 0),
+                    ),
+                  ),
+                ],
+              ),
+              if (_yearMin > 0 && _yearMax > 0 && _yearMin > _yearMax)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '起始年不能大于结束年',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.error,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            '取消',
+            style: TextStyle(color: colorScheme.outline),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            if (_yearMin > 0 && _yearMax > 0 && _yearMin > _yearMax) return;
+            Navigator.of(context).pop(
+              (
+                tags: _tags.toList(),
+                yearMin: _yearMin,
+                yearMax: _yearMax,
+              ),
+            );
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  List<int> _years() {
+    final now = DateTime.now().year;
+    return [for (var y = now; y >= 1980; y--) y];
   }
 }
