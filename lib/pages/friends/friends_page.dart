@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/friends/user_profile_page.dart';
 import 'package:kazumi/services/remote/friends_service.dart';
+import 'package:kazumi/utils/image_url.dart';
 
 /// 好友列表页：好友 / 待处理申请（同意/拒绝）
 class FriendsPage extends StatefulWidget {
@@ -182,8 +183,9 @@ class _FriendList extends StatelessWidget {
             leading: CircleAvatar(
               radius: 20,
               backgroundColor: colorScheme.surfaceContainerHighest,
-              backgroundImage:
-                  f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
+              backgroundImage: f.avatar.isNotEmpty
+                  ? NetworkImage(resolveImageUrl(f.avatar))
+                  : null,
               child: f.avatar.isEmpty
                   ? Text(
                       name.characters.first,
@@ -317,7 +319,9 @@ class _RequestList extends StatelessWidget {
       leading: CircleAvatar(
         radius: 20,
         backgroundColor: colorScheme.surfaceContainerHighest,
-        backgroundImage: f.avatar.isNotEmpty ? NetworkImage(f.avatar) : null,
+        backgroundImage: f.avatar.isNotEmpty
+            ? NetworkImage(resolveImageUrl(f.avatar))
+            : null,
         child: f.avatar.isEmpty
             ? Text(
                 name.characters.first,

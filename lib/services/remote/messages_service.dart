@@ -63,6 +63,7 @@ class AppMessage {
   final String actorNickname;
   final int commentId;
   final String content;
+  final List<String> images; // 私信图片（dm）
   final bool isRead;
   final String createdAt;
   final String kind; // 关联评论的 kind（subject/episode/character），供跳转
@@ -77,12 +78,14 @@ class AppMessage {
     required this.content,
     required this.isRead,
     required this.createdAt,
+    this.images = const [],
     this.kind = '',
     this.targetId = 0,
   });
 
   factory AppMessage.fromJson(Map<String, dynamic> j) {
     final isReadRaw = j['is_read'];
+    final imagesRaw = j['images'];
     return AppMessage(
       id: (j['id'] as num?)?.toInt() ?? 0,
       type: j['type']?.toString() ?? 'like',
@@ -90,6 +93,10 @@ class AppMessage {
       actorNickname: j['actor_nickname']?.toString() ?? '',
       commentId: (j['comment_id'] as num?)?.toInt() ?? 0,
       content: j['content']?.toString() ?? '',
+      images: [
+        for (final im in (imagesRaw is List ? imagesRaw : const []))
+          im.toString()
+      ],
       isRead: isReadRaw == true || (isReadRaw as num?)?.toInt() == 1,
       createdAt: j['created_at']?.toString() ?? '',
       kind: j['kind']?.toString() ?? '',
@@ -176,6 +183,30 @@ class MessagesService {
     }
   }
 
+  /// 私信会话列表（带 5 分钟内存缓存：进入消息页不重复加载）
+  static List<DmConversation>? _convsCache;
+  static DateTime? _convsCacheAt;
+
+  static Future<List<DmConversation>> cachedConversations() async {
+    final cache = _convsCache;
+    final at = _convsCacheAt;
+    if (cache != null &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(minutes: 5)) {
+      return cache;
+    }
+    final convs = await conversations();
+    _convsCache = convs;
+    _convsCacheAt = DateTime.now();
+    return convs;
+  }
+
+  /// 清空会话缓存（发私信/加好友后调用）
+  static void clearConversationCache() {
+    _convsCache = null;
+    _convsCacheAt = null;
+  }
+
   /// 私信会话列表
   Future<List<DmConversation>> conversations() async {
     if (!_loggedIn) return const <DmConversation>[];
@@ -249,13 +280,21 @@ class MessagesService {
     }
   }
 
-  /// 发送私信（仅好友）
-  Future<String?> sendDm({required int toUid, required String content}) async {
+  /// 发送私信（仅好友；images 为已上传的图片地址列表，最多3张）
+  Future<String?> sendDm({
+    required int toUid,
+    required String content,
+    List<String> images = const [],
+  }) async {
     if (!_loggedIn) return '未登录';
     try {
       final response = await _dio.post<dynamic>(
         '$_baseUrl/api/messages/send',
-        data: {'to_uid': toUid, 'content': content},
+        data: {
+          'to_uid': toUid,
+          'content': content,
+          if (images.isNotEmpty) 'images': images,
+        },
       );
       final data = _decode(response.data);
       if (data['code'] == 0) return null;

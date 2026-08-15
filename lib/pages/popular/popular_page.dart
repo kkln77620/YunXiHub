@@ -38,15 +38,22 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
   // Key used to position the dropdown menu for the tag selector
   final GlobalKey selectorKey = GlobalKey();
 
-  /// 随机番剧模式
-  static const String kRandomTag = '🎲 随机番剧';
-  bool _randomMode = false;
-  List<BangumiItem> _randomItems = [];
-  bool _randomLoading = false;
-  bool _randomError = false;
-  List<String> _randomTags = [];
-  int _randomYearMin = 0;
-  int _randomYearMax = 0;
+  /// 随机番剧模式（static：切走底部栏/重建页面不丢状态）
+  static const String kRandomTag = '随机番剧';
+  static bool randomMode = false;
+  static List<BangumiItem> randomItems = [];
+  static bool randomLoading = false;
+  static bool randomError = false;
+  static List<String> randomTags = [];
+  static int randomYearMin = 0;
+  static int randomYearMax = 0;
+  bool get _randomMode => randomMode;
+  List<BangumiItem> get _randomItems => randomItems;
+  bool get _randomLoading => randomLoading;
+  bool get _randomError => randomError;
+  List<String> get _randomTags => randomTags;
+  int get _randomYearMin => randomYearMin;
+  int get _randomYearMax => randomYearMax;
 
   /// 未读消息数（主页右上角信封红点）
   int _unreadCount = 0;
@@ -124,50 +131,43 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
   // ==================== 随机番剧 ====================
 
   Future<void> _loadRandom() async {
-    setState(() {
-      _randomLoading = true;
-      _randomError = false;
-    });
+    randomLoading = true;
+    randomError = false;
+    if (mounted) setState(() {});
     try {
       final items = await RandomAnimeService.instance.fetch(
-        tags: _randomTags,
-        yearMin: _randomYearMin,
-        yearMax: _randomYearMax,
+        tags: randomTags,
+        yearMin: randomYearMin,
+        yearMax: randomYearMax,
         count: 30,
       );
-      if (!mounted) return;
-      setState(() {
-        _randomItems = items;
-        _randomLoading = false;
-      });
+      randomItems = items;
+      randomLoading = false;
+      if (mounted) setState(() {});
       if (items.isEmpty) {
         KazumiDialog.showToast(message: '没有符合条件的番剧，换个筛选试试');
       }
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _randomError = true;
-        _randomLoading = false;
-      });
+      randomError = true;
+      randomLoading = false;
+      if (mounted) setState(() {});
     }
   }
 
   void _enterRandomMode() {
-    setState(() {
-      _randomMode = true;
-      _randomItems = [];
-    });
+    randomMode = true;
+    randomItems = [];
+    if (mounted) setState(() {});
     _loadRandom();
   }
 
   void _exitRandomMode() {
-    setState(() {
-      _randomMode = false;
-      _randomItems = [];
-      _randomTags = [];
-      _randomYearMin = 0;
-      _randomYearMax = 0;
-    });
+    randomMode = false;
+    randomItems = [];
+    randomTags = [];
+    randomYearMin = 0;
+    randomYearMax = 0;
+    if (mounted) setState(() {});
   }
 
   /// 随机番剧筛选对话框：tag 多选 + 年份区间
@@ -175,17 +175,15 @@ class _PopularPageState extends State<PopularPage> with WidgetsBindingObserver {
     final result = await showDialog<({List<String> tags, int yearMin, int yearMax})>(
       context: context,
       builder: (dialogContext) => _RandomFilterDialog(
-        initialTags: _randomTags,
-        initialYearMin: _randomYearMin,
-        initialYearMax: _randomYearMax,
+        initialTags: randomTags,
+        initialYearMin: randomYearMin,
+        initialYearMax: randomYearMax,
       ),
     );
     if (result == null || !mounted) return;
-    setState(() {
-      _randomTags = result.tags;
-      _randomYearMin = result.yearMin;
-      _randomYearMax = result.yearMax;
-    });
+    randomTags = result.tags;
+    randomYearMin = result.yearMin;
+    randomYearMax = result.yearMax;
     _loadRandom();
   }
 

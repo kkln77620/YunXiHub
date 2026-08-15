@@ -51,6 +51,14 @@ class KazumiDialog {
     Function()? onActionPressed,
     Duration duration = const Duration(milliseconds: 2500),
   }) {
+    // 优先用根 Navigator 的 Overlay：显示在所有页面之上，不被输入栏/评论页等遮挡
+    final overlay = rootNavigatorKey.currentState?.overlay;
+    if (overlay != null) {
+      _showOverlayToast(overlay, message, showActionButton, actionLabel,
+          onActionPressed, duration);
+      return;
+    }
+    // fallback：根 messenger
     final toastContext = _resolveToastContext(context);
     var messenger = _resolveScaffoldMessenger(context);
     if (messenger == null) {
@@ -69,6 +77,71 @@ class KazumiDialog {
       _showSnackBar(messenger, toastContext, message, showActionButton,
           actionLabel, onActionPressed, duration);
     }
+  }
+
+  /// Overlay 顶层 Toast（最高层级，动画淡入淡出）
+  static void _showOverlayToast(
+    OverlayState overlay,
+    String message,
+    bool showActionButton,
+    String? actionLabel,
+    Function()? onActionPressed,
+    Duration duration,
+  ) {
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) {
+        final colorScheme = Theme.of(ctx).colorScheme;
+        return Positioned(
+          top: MediaQuery.paddingOf(ctx).top + 12,
+          left: 16,
+          right: 16,
+          child: IgnorePointer(
+            child: Material(
+              elevation: 6,
+              color: colorScheme.inverseSurface,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: colorScheme.onInverseSurface),
+                      ),
+                    ),
+                    if (showActionButton)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () {
+                          if (entry.mounted) entry.remove();
+                          onActionPressed?.call();
+                        },
+                        child: Text(
+                          actionLabel ?? '知道了',
+                          style: TextStyle(
+                            color: colorScheme.inversePrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(entry);
+    Timer(duration, () {
+      if (entry.mounted) entry.remove();
+    });
   }
 
   static void _showSnackBar(

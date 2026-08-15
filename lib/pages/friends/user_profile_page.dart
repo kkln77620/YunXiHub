@@ -3,6 +3,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/messages/chat_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/friends_service.dart';
+import 'package:kazumi/utils/image_url.dart';
 
 /// 用户主页：资料 + 追番/历史（好友+对方开启才可见）+ 关系操作
 class UserProfilePage extends StatefulWidget {
@@ -121,7 +122,9 @@ class _UserProfilePageState extends State<UserProfilePage> {
           CircleAvatar(
             radius: 34,
             backgroundColor: colorScheme.surfaceContainerHighest,
-            backgroundImage: p.avatar.isNotEmpty ? NetworkImage(p.avatar) : null,
+            backgroundImage: p.avatar.isNotEmpty
+                ? NetworkImage(resolveImageUrl(p.avatar))
+                : null,
             child: p.avatar.isEmpty
                 ? Icon(Icons.person_rounded,
                     size: 36, color: colorScheme.onSurfaceVariant)
@@ -346,20 +349,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
     return [
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final c in p.collect.take(30))
-              Chip(
-                label: Text(
-                  c['name']?.toString() ?? '未知番剧',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                visualDensity: VisualDensity.compact,
-              ),
-          ],
-        ),
+        child: _CoverGrid(items: p.collect.take(30).toList()),
       ),
     ];
   }
@@ -381,29 +371,76 @@ class _UserProfilePageState extends State<UserProfilePage> {
       ];
     }
     return [
-      for (final h in p.history.take(30))
-        ListTile(
-          dense: true,
-          leading: Icon(
-            Icons.play_circle_outline_rounded,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          title: Text(
-            h['name']?.toString() ?? '未知番剧',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14),
-          ),
-          subtitle: Text(
-            h['episode_name']?.toString().isNotEmpty == true
-                ? '看到第 ${h['episode']} 话 · ${h['episode_name']}'
-                : '看到第 ${h['episode']} 话',
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: _CoverGrid(items: p.history.take(30).toList()),
+      ),
     ];
+  }
+}
+
+/// 封面 + 名称网格（追番/历史共用）
+class _CoverGrid extends StatelessWidget {
+  const _CoverGrid({required this.items});
+
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // 手机 3 列 / 平板 5 列
+    final width = MediaQuery.sizeOf(context).width;
+    final crossCount = width > 900 ? 5 : (width > 600 ? 4 : 3);
+    final itemWidth = (width - 16 * 2 - (crossCount - 1) * 8) / crossCount;
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossCount,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.62,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final name = item['name']?.toString() ?? '未知番剧';
+        final cover = item['cover']?.toString() ?? '';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: cover.isNotEmpty
+                    ? Image.network(
+                        resolveImageUrl(cover),
+                        width: itemWidth,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _coverFallback(colorScheme),
+                      )
+                    : _coverFallback(colorScheme),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _coverFallback(ColorScheme colorScheme) {
+    return Container(
+      width: double.infinity,
+      color: colorScheme.surfaceContainerHighest,
+      child: Icon(Icons.movie_rounded,
+          size: 32, color: colorScheme.onSurfaceVariant),
+    );
   }
 }

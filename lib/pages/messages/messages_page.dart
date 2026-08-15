@@ -5,6 +5,7 @@ import 'package:kazumi/pages/friends/friends_page.dart';
 import 'package:kazumi/pages/messages/chat_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/messages_service.dart';
+import 'package:kazumi/utils/image_url.dart';
 
 /// YunXiHub 消息中心 v3
 ///
@@ -68,29 +69,36 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
-  /// 加载平铺流：系统消息最新一条 + 私信会话列表
+  /// 加载平铺流：系统消息最新一条 + 私信会话列表（会话走缓存：进入秒显示，后台静默刷新）
   Future<void> _loadStream() async {
     setState(() {
       _streamLoading = true;
       _streamError = false;
     });
     try {
+      // 有 5 分钟缓存时立即返回（不转圈）
+      final convs = await MessagesService.instance.cachedConversations();
+      if (!mounted) return;
+      setState(() {
+        _convs = convs;
+        _streamLoading = false;
+      });
+      // 后台静默刷新最新数据
       final sys = await MessagesService.instance.systemMessages(limit: 1);
       final sysUnread = await MessagesService.instance
           .list(type: MessageType.system)
           .then((r) => r.unreadCount);
-      final convs = await MessagesService.instance.conversations();
+      final fresh = await MessagesService.instance.conversations();
       if (!mounted) return;
       setState(() {
         _sysLatest = sys.isNotEmpty ? sys.first : null;
         _sysUnread = sysUnread;
-        _convs = convs;
-        _streamLoading = false;
+        _convs = fresh;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _streamError = true;
+        if (_convs.isEmpty) _streamError = true;
         _streamLoading = false;
       });
     }
@@ -216,6 +224,7 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       ),
     );
+    MessagesService.instance.clearConversationCache();
     _loadStream();
   }
 
@@ -443,8 +452,9 @@ class _ConversationTile extends StatelessWidget {
       leading: CircleAvatar(
         radius: 20,
         backgroundColor: colorScheme.surfaceContainerHighest,
-        backgroundImage:
-            conv.peerAvatar.isNotEmpty ? NetworkImage(conv.peerAvatar) : null,
+        backgroundImage: conv.peerAvatar.isNotEmpty
+            ? NetworkImage(resolveImageUrl(conv.peerAvatar))
+            : null,
         child: conv.peerAvatar.isEmpty
             ? Text(
                 name.characters.first,

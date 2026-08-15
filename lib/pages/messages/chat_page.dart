@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:kazumi/pages/friends/user_profile_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/messages_service.dart';
+import 'package:kazumi/utils/image_url.dart';
 
 /// 私信聊天页：与好友的一对一对话（气泡布局，底部输入框）
+/// - 每 2 秒静默轮询新消息（不打扰、不转圈）
+/// - 点击对方头像 → 打开好友主页
+/// - 支持发送图片（最多 3 张，服务器校验 24 小时注册限制）
 class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
@@ -25,6 +33,8 @@ class _ChatPageState extends State<ChatPage> {
   List<AppMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  Timer? _pollTimer;
+  bool _polling = false;
 
   int get _myId => AuthService.instance.userId;
 
@@ -32,10 +42,13 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _load();
+    // 每 2 秒静默轮询新消息
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _silentPoll());
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -54,6 +67,27 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottom();
   }
 
+  /// 静默轮询：拉取最新消息，只追加新条目（无 UI 打扰）
+  Future<void> _silentPoll() async {
+    if (_polling || !mounted) return;
+    _polling = true;
+    try {
+      final items = await MessagesService.instance
+          .dmDetail(peerUid: widget.peerUid, limit: 20);
+      if (!mounted) return;
+      final have = _messages.map((m) => m.id).toSet();
+      final fresh = items.reversed.where((m) => !have.contains(m)).toList();
+      if (fresh.isNotEmpty) {
+        setState(() => _messages = [..._messages, ...fresh]);
+        _scrollToBottom();
+      }
+    } catch (_) {
+      // 静默失败
+    } finally {
+      _polling = false;
+    }
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
@@ -62,12 +96,38 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  Future<void> _send() async {
+  /// 选择并上传图片（压缩），返回服务器图片地址
+  Future<String?> _pickAndUploadImage() async {
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (picked == null) return null;
+      final url = await AuthService.instance
+          .uploadImage(picked.path, use: 'comment');
+      return url;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('图片上传失败: $e'), duration: const Duration(seconds: 2)),
+        );
+      }
+      return null;
+    }
+  }
+
+  Future<void> _send({List<String> images = const []}) async {
     final text = _input.text.trim();
-    if (text.isEmpty || _sending) return;
+    if ((text.isEmpty && images.isEmpty) || _sending) return;
     setState(() => _sending = true);
-    final err = await MessagesService.instance
-        .sendDm(toUid: widget.peerUid, content: text);
+    final err = await MessagesService.instance.sendDm(
+      toUid: widget.peerUid,
+      content: text,
+      images: images,
+    );
     if (!mounted) return;
     setState(() => _sending = false);
     if (err != null) {
@@ -84,11 +144,13 @@ class _ChatPageState extends State<ChatPage> {
         actorNickname: AuthService.instance.nickname,
         commentId: 0,
         content: text,
+        images: images,
         isRead: true,
         createdAt: _nowText(),
       ));
       _input.clear();
     });
+    MessagesService.instance.clearConversationCache();
     _scrollToBottom();
   }
 
@@ -130,10 +192,11 @@ class _ChatPageState extends State<ChatPage> {
                             avatar: mine ? '' : widget.peerAvatar,
                             nickname: mine ? '' : widget.peerNickname,
                             content: m.content,
+                            images: m.images,
                             time: m.createdAt,
                             onAvatarTap: mine
                                 ? null
-                                : () => Navigator.of(context).pop(),
+                                : () => _openPeerProfile(),
                           );
                         },
                       ),
@@ -150,6 +213,11 @@ class _ChatPageState extends State<ChatPage> {
               ),
               child: Row(
                 children: [
+                  IconButton(
+                    tooltip: '发送图片',
+                    onPressed: _sending ? null : _pickAndSendImage,
+                    icon: const Icon(Icons.image_rounded),
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _input,
@@ -175,7 +243,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _sending ? null : _send,
+                    onPressed: _sending ? null : () => _send(),
                     icon: _sending
                         ? const SizedBox(
                             width: 18,
@@ -192,6 +260,20 @@ class _ChatPageState extends State<ChatPage> {
       ),
     );
   }
+
+  Future<void> _pickAndSendImage() async {
+    final url = await _pickAndUploadImage();
+    if (url == null || !mounted) return;
+    await _send(images: [url]);
+  }
+
+  void _openPeerProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UserProfilePage(uid: widget.peerUid),
+      ),
+    );
+  }
 }
 
 /// 聊天气泡
@@ -202,6 +284,7 @@ class _Bubble extends StatelessWidget {
     required this.nickname,
     required this.content,
     required this.time,
+    this.images = const [],
     this.onAvatarTap,
   });
 
@@ -210,6 +293,7 @@ class _Bubble extends StatelessWidget {
   final String nickname;
   final String content;
   final String time;
+  final List<String> images;
   final VoidCallback? onAvatarTap;
 
   @override
@@ -234,12 +318,38 @@ class _Bubble extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            content,
-            style: TextStyle(
-              color: mine ? colorScheme.onPrimary : colorScheme.onSurface,
+          if (images.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final img in images.take(3))
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      resolveImageUrl(img),
+                      width: 140,
+                      height: 140,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 140,
+                        height: 140,
+                        color: colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.broken_image_rounded),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
+            if (content.isNotEmpty) const SizedBox(height: 6),
+          ],
+          if (content.isNotEmpty)
+            Text(
+              content,
+              style: TextStyle(
+                color: mine ? colorScheme.onPrimary : colorScheme.onSurface,
+              ),
+            ),
           if (timeText.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -277,9 +387,8 @@ class _Bubble extends StatelessWidget {
             child: CircleAvatar(
               radius: 16,
               backgroundColor: colorScheme.surfaceContainerHighest,
-              backgroundImage: avatar.isNotEmpty
-                  ? NetworkImage(avatar)
-                  : null,
+              backgroundImage:
+                  avatar.isNotEmpty ? NetworkImage(resolveImageUrl(avatar)) : null,
               child: avatar.isEmpty
                   ? Icon(Icons.person_rounded,
                       size: 18, color: colorScheme.onSurfaceVariant)
