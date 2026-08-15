@@ -195,7 +195,7 @@ class MessagesService {
         DateTime.now().difference(at) < const Duration(minutes: 5)) {
       return cache;
     }
-    final convs = await conversations();
+    final convs = await instance.conversations();
     _convsCache = convs;
     _convsCacheAt = DateTime.now();
     return convs;
