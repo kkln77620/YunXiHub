@@ -187,7 +187,7 @@ class MessagesService {
   static List<DmConversation>? _convsCache;
   static DateTime? _convsCacheAt;
 
-  static Future<List<DmConversation>> cachedConversations() async {
+  Future<List<DmConversation>> cachedConversations() async {
     final cache = _convsCache;
     final at = _convsCacheAt;
     if (cache != null &&
@@ -195,14 +195,14 @@ class MessagesService {
         DateTime.now().difference(at) < const Duration(minutes: 5)) {
       return cache;
     }
-    final convs = await instance.conversations();
+    final convs = await conversations();
     _convsCache = convs;
     _convsCacheAt = DateTime.now();
     return convs;
   }
 
   /// 清空会话缓存（发私信/加好友后调用）
-  static void clearConversationCache() {
+  void clearConversationCache() {
     _convsCache = null;
     _convsCacheAt = null;
   }

@@ -29,18 +29,15 @@ jobs:
         run: flutter pub get
         shell: bash
 
-      # ---- YunXiHub 固定签名 ----
-      # keystore 已入库（android/app/yunxihub-release.keystore + android/key.properties），
-      # 所有构建使用同一签名，覆盖安装不再提示签名不一致。
+      - name: Debug check sources
+        run: |
+          echo "--- messages_service lines: $(wc -l < lib/services/remote/messages_service.dart)"
+          grep -c "cachedConversations" lib/services/remote/messages_service.dart || true
+          sed -n '180,212p' lib/services/remote/messages_service.dart
+        shell: bash
 
       - name: Build APK
         run: flutter build apk --release --dart-define=DANDANAPI_APPID=${{ secrets.DANDANAPI_APPID }} --dart-define=DANDANAPI_KEY=${{ secrets.DANDANAPI_KEY }}
-        shell: bash
-
-      - name: Print APK signature (for CI verification)
-        run: |
-          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk 2>/dev/null | grep -E 'Signer #1 certificate SHA-256|DN:' | head -4
         shell: bash
 
       - name: Upload APK
