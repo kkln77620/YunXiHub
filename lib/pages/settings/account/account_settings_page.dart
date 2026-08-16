@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -173,10 +174,10 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                       const SizedBox(height: 12),
                       TextField(
                         controller: nicknameController,
-                        maxLength: 60,
+                        maxLength: 30,
                         decoration: const InputDecoration(
                           labelText: '昵称',
-                          hintText: '中文≤10 / 英文≤30 / 日文≤20',
+                          hintText: '不超过30字节',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -199,6 +200,11 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                               final nick = nicknameController.text.trim();
                               if (nick.isEmpty) {
                                 KazumiDialog.showToast(message: '昵称不能为空');
+                                return;
+                              }
+                              // 字节限制（UTF-8，≤30字节）
+                              if (utf8.encode(nick).length > 30) {
+                                KazumiDialog.showToast(message: '昵称不能超过30字节');
                                 return;
                               }
                               setState(() => saving = true);

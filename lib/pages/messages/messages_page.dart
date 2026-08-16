@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/pages/comments/comment_jump_page.dart';
@@ -29,6 +31,7 @@ class _MessagesPageState extends State<MessagesPage> {
   List<DmConversation> _convs = [];
   AppMessage? _sysLatest;
   int _sysUnread = 0;
+  List<AnnouncementItem> _announcements = [];
   bool _streamLoading = true;
   bool _streamError = false;
 
@@ -69,32 +72,36 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
-  /// 加载平铺流：系统消息最新一条 + 私信会话列表（会话走缓存：进入秒显示，后台静默刷新）
+  /// 加载平铺流：**并行**拉取（会话缓存 + 系统消息缓存 + 未读数），进入秒显示
   Future<void> _loadStream() async {
     setState(() {
       _streamLoading = true;
       _streamError = false;
     });
     try {
-      // 有 5 分钟缓存时立即返回（不转圈）
-      final convs = await MessagesService.instance.cachedConversations();
+      // 并行：公告 + 会话（缓存秒显）+ 系统消息（磁盘缓存秒显）+ 未读
+      final results = await Future.wait([
+        MessagesService.instance.announcements(),
+        MessagesService.instance.cachedConversations(),
+        MessagesService.instance.cachedSystemMessages(limit: 1),
+        MessagesService.instance
+            .list(type: MessageType.system)
+            .then((r) => r.unreadCount),
+      ]);
       if (!mounted) return;
+      final anns = results[0] as List<AnnouncementItem>;
+      final convs = results[1] as List<DmConversation>;
+      final sys = results[2] as List<AppMessage>;
+      final sysUnread = results[3] as int;
       setState(() {
+        _announcements = anns;
         _convs = convs;
-        _streamLoading = false;
-      });
-      // 后台静默刷新最新数据
-      final sys = await MessagesService.instance.systemMessages(limit: 1);
-      final sysUnread = await MessagesService.instance
-          .list(type: MessageType.system)
-          .then((r) => r.unreadCount);
-      final fresh = await MessagesService.instance.conversations();
-      if (!mounted) return;
-      setState(() {
         _sysLatest = sys.isNotEmpty ? sys.first : null;
         _sysUnread = sysUnread;
-        _convs = fresh;
+        _streamLoading = false;
       });
+      // 后台静默刷新最新（本地聚合会话 + 系统消息刷新缓存）
+      unawaited(_silentRefreshStream());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -102,6 +109,19 @@ class _MessagesPageState extends State<MessagesPage> {
         _streamLoading = false;
       });
     }
+  }
+
+  /// 后台静默刷新（不阻塞 UI）
+  Future<void> _silentRefreshStream() async {
+    try {
+      final fresh = await MessagesService.instance.conversations();
+      final sys = await MessagesService.instance.cachedSystemMessages(limit: 1);
+      if (!mounted) return;
+      setState(() {
+        if (fresh.isNotEmpty) _convs = fresh;
+        if (sys.isNotEmpty) _sysLatest = sys.first;
+      });
+    } catch (_) {}
   }
 
   Future<void> _refresh() async {
@@ -308,6 +328,7 @@ class _MessagesPageState extends State<MessagesPage> {
       );
     }
     final hasSys = _sysLatest != null || _sysUnread > 0;
+    final hasAnn = _announcements.isNotEmpty;
     final loggedIn = AuthService.instance.isLoggedIn;
     if (!loggedIn) {
       return Center(
@@ -319,7 +340,7 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       );
     }
-    if (!hasSys && _convs.isEmpty) {
+    if (!hasSys && _convs.isEmpty && !hasAnn) {
       return RefreshIndicator(
         onRefresh: _refresh,
         child: ListView(
@@ -331,21 +352,31 @@ class _MessagesPageState extends State<MessagesPage> {
         ),
       );
     }
+    final extraTiles = (hasAnn ? 1 : 0) + (hasSys ? 1 : 0);
     return RefreshIndicator(
       onRefresh: _refresh,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: (hasSys ? 1 : 0) + _convs.length,
+        itemCount: extraTiles + _convs.length,
         separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
         itemBuilder: (context, index) {
-          if (hasSys && index == 0) {
+          // 公告置顶栏（最新一条）
+          if (hasAnn && index == 0) {
+            return _AnnouncementTile(
+              latest: _announcements.first,
+              onTap: () => _openAnnouncements(),
+            );
+          }
+          var idx = index;
+          if (hasAnn) idx -= 1;
+          if (hasSys && idx == 0) {
             return _SystemTile(
               latest: _sysLatest,
               unread: _sysUnread,
               onTap: _openSystemPage,
             );
           }
-          final convIndex = hasSys ? index - 1 : index;
+          final convIndex = hasSys ? idx - 1 : idx;
           final conv = _convs[convIndex];
           return _ConversationTile(
             conv: conv,
@@ -353,6 +384,150 @@ class _MessagesPageState extends State<MessagesPage> {
           );
         },
       ),
+    );
+  }
+
+  /// 打开公告列表页
+  Future<void> _openAnnouncements() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AnnouncementListPage(items: _announcements),
+      ),
+    );
+  }
+}
+
+/// 公告置顶栏（消息页首位，展示最新一条公告）
+class _AnnouncementTile extends StatelessWidget {
+  const _AnnouncementTile({required this.latest, required this.onTap});
+
+  final AnnouncementItem latest;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final title = latest.title.isEmpty ? '系统公告' : latest.title;
+    final content =
+        latest.content.isEmpty ? '（无内容）' : latest.content;
+    return ListTile(
+      onTap: onTap,
+      leading: CircleAvatar(
+        radius: 20,
+        backgroundColor: colorScheme.tertiaryContainer,
+        child: Icon(
+          Icons.campaign_rounded,
+          color: colorScheme.onTertiaryContainer,
+          size: 20,
+        ),
+      ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '公告',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          content,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        color: colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// 公告列表页
+class _AnnouncementListPage extends StatelessWidget {
+  const _AnnouncementListPage({required this.items});
+
+  final List<AnnouncementItem> items;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('系统公告')),
+      body: items.isEmpty
+          ? Center(
+              child: Text(
+                '暂无公告',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: items.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, indent: 72),
+              itemBuilder: (context, index) {
+                final a = items[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: colorScheme.tertiaryContainer,
+                    child: Icon(
+                      Icons.campaign_rounded,
+                      color: colorScheme.onTertiaryContainer,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(
+                    a.title.isEmpty ? '系统公告' : a.title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      a.content.isEmpty ? '（无内容）' : a.content,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                  trailing: Text(
+                    a.createdAt.length >= 16
+                        ? a.createdAt.substring(5, 16)
+                        : a.createdAt,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -570,6 +745,19 @@ class _SystemMessageListPageState extends State<_SystemMessageListPage> {
   @override
   void initState() {
     super.initState();
+    _loadCached();
+  }
+
+  /// 先显磁盘缓存（秒开），再后台拉服务器刷新
+  Future<void> _loadCached() async {
+    final cached = await MessagesService.instance.cachedSystemMessages(limit: 30);
+    if (cached.isNotEmpty && mounted) {
+      setState(() {
+        _items = cached;
+        _offset = cached.length;
+        _hasMore = cached.length == 30;
+      });
+    }
     _loadMore();
   }
 

@@ -13,6 +13,7 @@ import 'package:kazumi/bean/widget/image_preview.dart';
 import 'package:kazumi/pages/friends/user_profile_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
 import 'package:kazumi/services/remote/community_comments_service.dart';
+import 'package:kazumi/services/remote/entitlements_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/comment_filter.dart';
@@ -339,6 +340,17 @@ class _CommunityCommentsViewState extends State<CommunityCommentsView> {
     if (!loggedIn) {
       KazumiDialog.showToast(message: '请先登录账号');
       await context.pushNamed('/settings/account/');
+      return;
+    }
+    // 权益本地校验（服务器下发，不写死）：封禁 / 未通过考核 → 拦截
+    final ent = EntitlementsService.current;
+    if (ent.isBanned) {
+      KazumiDialog.showToast(
+          message: ent.banMsg.isEmpty ? '账号已被封禁' : ent.banMsg);
+      return;
+    }
+    if (!ent.commentEnabled) {
+      KazumiDialog.showToast(message: '未通过入站考核（L0），暂不能发表评论');
       return;
     }
     await showModalBottomSheet<void>(
@@ -1990,6 +2002,9 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
   bool _submitting = false;
   bool _uploadOriginal = false; // 原图模式（仅管理员可开启，默认关闭）
 
+  /// 权益（服务器下发）：字数/图片上限动态读取
+  Entitlements get _ent => EntitlementsService.current;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -1997,22 +2012,29 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
   }
 
   Future<void> _pickImages() async {
-    if (_localImages.length >= 3) {
-      KazumiDialog.showToast(message: '最多3张图片');
+    final maxImg = _ent.commentMaxImages;
+    if (_localImages.length >= maxImg) {
+      KazumiDialog.showToast(message: '最多$maxImg张图片');
       return;
     }
     try {
       // 默认压缩到最长边1920/质量85；原图模式（仅管理员）不压缩
       final original = _uploadOriginal && AuthService.instance.isAdmin;
       final files = await _picker.pickMultiImage(
-        limit: 3 - _localImages.length,
+        limit: maxImg - _localImages.length,
         maxWidth: original ? null : 1920,
         maxHeight: original ? null : 1920,
         imageQuality: original ? null : 85,
       );
       if (files.isEmpty) return;
+      // 本地先计数：超出权益上限直接拦截（不选入，更不上传）
+      final room = maxImg - _localImages.length;
+      final take = files.take(room).toList();
+      if (files.length > room) {
+        KazumiDialog.showToast(message: '最多$maxImg张图片');
+      }
       setState(() {
-        _localImages.addAll(files.map((f) => f.path));
+        _localImages.addAll(take.map((f) => f.path));
       });
     } catch (_) {
       KazumiDialog.showToast(message: '选择图片失败');
@@ -2025,8 +2047,20 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
       KazumiDialog.showToast(message: '写点什么吧');
       return;
     }
+    // 编辑时本地校验（服务器下发权益，不写死）：字数 + 图片数
+    final ent = _ent;
+    if (content.length > ent.commentMaxLen) {
+      KazumiDialog.showToast(message: '评论最多 ${ent.commentMaxLen} 字');
+      return;
+    }
+    if (_localImages.length > ent.commentMaxImages) {
+      KazumiDialog.showToast(
+          message: '最多 ${ent.commentMaxImages} 张图片');
+      return;
+    }
     setState(() => _submitting = true);
     try {
+      // 先本地校验通过，再逐张上传（顺序：本地计数 → 权益达标 → 上传）
       final imageUrls = <String>[];
       for (final p in _localImages) {
         KazumiDialog.showToast(message: '图片上传中…');
@@ -2074,7 +2108,7 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
           TextField(
             controller: _controller,
             maxLines: 4,
-            maxLength: 2000,
+            maxLength: _ent.commentMaxLen,
             decoration: const InputDecoration(
               hintText: '分享你的看法…',
               border: OutlineInputBorder(),
@@ -2132,23 +2166,45 @@ class _CommentComposerSheetState extends State<_CommentComposerSheet> {
                 label: const Text('图片'),
               ),
               if (_localImages.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                // 原图开关：默认压缩；仅管理员可用（暂时不对外启用）
-                OutlinedButton.icon(
-                  onPressed: () {
+                const SizedBox(width: 4),
+                // 原图开关：紧凑样式（同剧透区），不挤压发布按钮
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
                     if (!AuthService.instance.isAdmin) {
                       KazumiDialog.showToast(message: '该功能暂未开放');
                       return;
                     }
                     setState(() => _uploadOriginal = !_uploadOriginal);
                   },
-                  icon: Icon(
-                    _uploadOriginal
-                        ? Icons.hd_rounded
-                        : Icons.hd_outlined,
-                    size: 18,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _uploadOriginal
+                              ? Icons.hd_rounded
+                              : Icons.hd_outlined,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          _uploadOriginal ? '原图:开' : '原图',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
                   ),
-                  label: Text(_uploadOriginal ? '原图:开' : '原图'),
                 ),
               ],
               const SizedBox(width: 8),

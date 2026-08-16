@@ -1,26 +1,21 @@
-import 'dart:convert';
 import 'dart:math';
 
-import 'package:dio/dio.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
-import 'package:kazumi/request/config/api_endpoints.dart';
+import 'package:kazumi/request/apis/bangumi_api.dart';
 import 'package:kazumi/utils/constants.dart';
 
-/// 随机番剧服务（与搜索同源：Bangumi 搜索接口，客户端镜像通道）
+/// 随机番剧服务（与搜索页**完全同源**：同一 Bangumi 搜索通道）
 ///
-/// - 用选中的 tag 作为搜索词（与搜索页同接口，稳定）
-/// - 读取结果条目自身的 tags，符合的标记为备选
+/// 修复说明：旧实现直连 `GET /v0/search/subjects`（镜像 404 → 候选池永远为空），
+/// 现改为调用 `BangumiApi.bangumiSearch`（搜索页同款 POST 通道，实测稳定）。
+///
+/// - 用选中的 tag 作为搜索词（与搜索页同接口）
+/// - 读取结果条目自身 tags，符合的标记备选；名称/别名含 tag 也算
 /// - 每次随机 = 对备选池随机排序
 class RandomAnimeService {
   RandomAnimeService._();
 
   static final RandomAnimeService instance = RandomAnimeService._();
-
-  final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 12),
-    receiveTimeout: const Duration(seconds: 20),
-    headers: {'User-Agent': 'YunXiHub/3.3.0 (https://yunxi.yunxiapp.eu.cc)'},
-  ));
 
   /// 拉取随机番剧（与搜索同数据源）
   ///
@@ -41,72 +36,60 @@ class RandomAnimeService {
             ? defaultAnimeTags.sublist(0, 8)
             : defaultAnimeTags);
     final pagesPerWord = tags.isNotEmpty ? 2 : 1;
-    try {
-      for (final word in searchWords) {
-        for (var i = 0; i < pagesPerWord; i++) {
-          final page = 1 + Random().nextInt(6);
-          try {
-            final resp = await _dio.get<dynamic>(
-              '${ApiEndpoints.bangumiAPIDomain}/v0/search/subjects',
-              queryParameters: {
-                'keyword': word,
-                'limit': 25,
-                'offset': (page - 1) * 25,
-              },
-            );
-            final data = resp.data;
-            final list = data is String
-                ? _decodeList(data)
-                : ((data as Map)['data'] as List? ?? const []);
-            for (final s in list) {
-              if (s is! Map) continue;
-              try {
-                final item = BangumiItem.fromJson(Map<String, dynamic>.from(s));
-                pool[item.id] = item;
-              } catch (_) {}
-            }
-          } catch (_) {
-            // 单页失败忽略
+    for (final word in searchWords) {
+      for (var i = 0; i < pagesPerWord; i++) {
+        // 随机翻页（0-4），尽量扩大候选多样性；失败静默忽略
+        final page = Random().nextInt(5);
+        try {
+          final result = await BangumiApi.bangumiSearch(
+            word,
+            limit: 25,
+            offset: page * 25,
+          );
+          if (result == null) continue;
+          for (final item in result.items) {
+            if (item.id != null) pool[item.id] = item;
           }
+        } catch (_) {
+          // 单页失败忽略
         }
       }
-    } catch (_) {}
+    }
 
     // 读取条目自身 tag：包含任一选中 tag 的标记为备选（未选 tag 全通过）
-    // 兼容：名称/别名含 tag 也视为相关
-    final candidates = pool.values.where((item) {
-      if (tags.isNotEmpty) {
+    // 兼容：名称/别名含 tag 也视为相关；
+    // 兜底：全部不命中时保留全部结果（搜索词本身就是 tag，结果已相关）
+    final raw = pool.values.toList();
+    List<BangumiItem> candidates;
+    if (tags.isEmpty) {
+      candidates = raw;
+    } else {
+      final hit = raw.where((item) {
         final itemTags = item.tags.map((t) => t.name).toSet();
-        final hit = tags.any((t) =>
+        return tags.any((t) =>
             itemTags.contains(t) ||
             item.name.contains(t) ||
-            item.nameCn.contains(t));
-        if (!hit) return false;
-      }
+            item.nameCn.contains(t) ||
+            item.alias.any((a) => a.contains(t)));
+      }).toList();
+      candidates = hit.isEmpty ? raw : hit; // 兜底：不因 tags 匹配导致全空
+    }
+
+    // 年份过滤
+    final filtered = candidates.where((item) {
       final year = _yearOf(item.airDate);
       if (yearMin > 0 && (year == 0 || year < yearMin)) return false;
       if (yearMax > 0 && (year == 0 || year > yearMax)) return false;
       return true;
     }).toList();
 
-    candidates.shuffle(Random());
-    return candidates.take(count.clamp(1, 40)).toList();
+    filtered.shuffle(Random());
+    return filtered.take(count.clamp(1, 40)).toList();
   }
 
   int _yearOf(String date) {
     if (date.length < 4) return 0;
     final y = int.tryParse(date.substring(0, 4));
     return y ?? 0;
-  }
-
-  List<dynamic> _decodeList(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map && decoded['data'] is List) {
-        return decoded['data'] as List;
-      }
-      if (decoded is List) return decoded;
-    } catch (_) {}
-    return const [];
   }
 }

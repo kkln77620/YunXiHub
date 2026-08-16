@@ -4,13 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kazumi/pages/friends/user_profile_page.dart';
 import 'package:kazumi/services/remote/auth_service.dart';
+import 'package:kazumi/services/remote/dm_local_store.dart';
+import 'package:kazumi/services/remote/entitlements_service.dart';
 import 'package:kazumi/services/remote/messages_service.dart';
 import 'package:kazumi/utils/image_url.dart';
 
 /// 私信聊天页：与好友的一对一对话（气泡布局，底部输入框）
-/// - 每 2 秒静默轮询新消息（不打扰、不转圈）
+///
+/// 架构（服务器不存聊天记录）：
+/// - 消息**完全本地加密存储**（DmLocalStore），服务器只做转发
+/// - 每 2 秒推送式轮询：有新消息 → **增量追加**（只加新 msgId，不动旧内容）
+/// - 无新消息 → 零 UI 更新（不打扰）
 /// - 点击对方头像 → 打开好友主页
-/// - 支持发送图片（最多 3 张，服务器校验 24 小时注册限制）
+/// - 发图片：本地先校验权益（注册满24h/张数），通过才上传
 class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
@@ -30,7 +36,7 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
-  List<AppMessage> _messages = [];
+  List<DmMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
   Timer? _pollTimer;
@@ -42,8 +48,9 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _load();
-    // 每 2 秒静默轮询新消息
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _silentPoll());
+    // 每 2 秒推送式轮询（有新消息才加载，无则零打扰）
+    _pollTimer =
+        Timer.periodic(const Duration(seconds: 2), (_) => _silentPoll());
   }
 
   @override
@@ -54,33 +61,65 @@ class _ChatPageState extends State<ChatPage> {
     super.dispose();
   }
 
+  /// 首次加载：本地秒显（加密存储读取）→ 本地空时从服务器迁移历史
   Future<void> _load() async {
     setState(() => _loading = true);
-    final items = await MessagesService.instance
-        .dmDetail(peerUid: widget.peerUid, limit: 100);
-    if (!mounted) return;
-    // 服务器返回最新在前，反转成旧→新（最新在底部）
-    setState(() {
-      _messages = items.reversed.toList();
-      _loading = false;
-    });
-    _scrollToBottom();
+    try {
+      var items = await DmLocalStore.instance.messages(widget.peerUid);
+      if (items.isEmpty) {
+        // 首次迁移服务器历史（一次性写入本地，之后不再请求）
+        final remote = await MessagesService.instance
+            .dmDetail(peerUid: widget.peerUid, limit: 100);
+        if (remote.isNotEmpty) {
+          await DmLocalStore.instance.importHistory(widget.peerUid, remote);
+          items = await DmLocalStore.instance.messages(widget.peerUid);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _messages = items;
+        _loading = false;
+      });
+      _scrollToBottom();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
-  /// 静默轮询：拉取最新消息，只追加新条目（无 UI 打扰）
+  /// 推送式轮询：只有新消息才加载（增量追加到本地 + UI），无则不动
   Future<void> _silentPoll() async {
     if (_polling || !mounted) return;
     _polling = true;
     try {
-      final items = await MessagesService.instance
-          .dmDetail(peerUid: widget.peerUid, limit: 20);
-      if (!mounted) return;
-      final have = _messages.map((m) => m.id).toSet();
-      final fresh = items.reversed.where((m) => !have.contains(m)).toList();
-      if (fresh.isNotEmpty) {
-        setState(() => _messages = [..._messages, ...fresh]);
-        _scrollToBottom();
+      final relay =
+          await MessagesService.instance.pollDm(peerUid: widget.peerUid);
+      if (relay.isEmpty || !mounted) return; // 无新消息：零 UI 更新
+      final have = _messages.map((m) => m.dedupKey).toSet();
+      final fresh = <DmMessage>[];
+      for (final r in relay) {
+        if (have.contains(r.msgId)) continue;
+        fresh.add(DmMessage(
+          msgId: r.msgId,
+          peerUid: widget.peerUid,
+          mine: false,
+          peerNickname: r.senderNickname.isEmpty
+              ? widget.peerNickname
+              : r.senderNickname,
+          content: r.content,
+          images: r.images,
+          createdAt: r.createdAt,
+          sent: true,
+        ));
       }
+      if (fresh.isEmpty) return; // 全是已见过的：不更新
+      for (final m in fresh) {
+        await DmLocalStore.instance.append(m); // 落本地加密存储
+      }
+      if (!mounted) return;
+      setState(() => _messages = [..._messages, ...fresh]); // 增量追加
+      _scrollToBottom();
+      MessagesService.instance.clearConversationCache();
     } catch (_) {
       // 静默失败
     } finally {
@@ -96,8 +135,16 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
-  /// 选择并上传图片（压缩），返回服务器图片地址
+  /// 选择并上传图片（压缩）：**先本地校验权益**（注册满24h/张数）再上传
   Future<String?> _pickAndUploadImage() async {
+    final ent = EntitlementsService.current;
+    if (!ent.dmImageEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('注册满 ${ent.dmImageRegHours} 小时后可发送图片'),
+        duration: const Duration(seconds: 2),
+      ));
+      return null;
+    }
     try {
       final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
@@ -106,13 +153,15 @@ class _ChatPageState extends State<ChatPage> {
         imageQuality: 85,
       );
       if (picked == null) return null;
-      final url = await AuthService.instance
-          .uploadImage(picked.path, use: 'comment');
+      final url =
+          await AuthService.instance.uploadImage(picked.path, use: 'comment');
       return url;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('图片上传失败: $e'), duration: const Duration(seconds: 2)),
+          SnackBar(
+              content: Text('图片上传失败: $e'),
+              duration: const Duration(seconds: 2)),
         );
       }
       return null;
@@ -123,35 +172,39 @@ class _ChatPageState extends State<ChatPage> {
     final text = _input.text.trim();
     if ((text.isEmpty && images.isEmpty) || _sending) return;
     setState(() => _sending = true);
-    final err = await MessagesService.instance.sendDm(
+    // 本地先落一条（乐观显示），发送失败也保留本地记录
+    final local = DmMessage(
+      msgId: 'l${DateTime.now().microsecondsSinceEpoch}',
+      peerUid: widget.peerUid,
+      mine: true,
+      peerNickname: widget.peerNickname,
+      content: text,
+      images: images,
+      createdAt: _nowText(),
+      sent: true,
+    );
+    await DmLocalStore.instance.append(local);
+    if (mounted) {
+      setState(() {
+        _messages = [..._messages, local];
+        _input.clear();
+      });
+      _scrollToBottom();
+    }
+    MessagesService.instance.clearConversationCache();
+    final result = await MessagesService.instance.sendDm(
       toUid: widget.peerUid,
       content: text,
       images: images,
     );
     if (!mounted) return;
     setState(() => _sending = false);
-    if (err != null) {
+    if (result.err != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(err), duration: const Duration(seconds: 2)),
+        SnackBar(
+            content: Text(result.err!), duration: const Duration(seconds: 2)),
       );
-      return;
     }
-    setState(() {
-      _messages.add(AppMessage(
-        id: 0,
-        type: 'dm',
-        actorId: _myId,
-        actorNickname: AuthService.instance.nickname,
-        commentId: 0,
-        content: text,
-        images: images,
-        isRead: true,
-        createdAt: _nowText(),
-      ));
-      _input.clear();
-    });
-    MessagesService.instance.clearConversationCache();
-    _scrollToBottom();
   }
 
   String _nowText() {
@@ -186,7 +239,7 @@ class _ChatPageState extends State<ChatPage> {
                         itemCount: _messages.length,
                         itemBuilder: (context, index) {
                           final m = _messages[index];
-                          final mine = m.actorId == _myId && _myId > 0;
+                          final mine = m.mine;
                           return _Bubble(
                             mine: mine,
                             avatar: mine ? '' : widget.peerAvatar,
@@ -194,9 +247,8 @@ class _ChatPageState extends State<ChatPage> {
                             content: m.content,
                             images: m.images,
                             time: m.createdAt,
-                            onAvatarTap: mine
-                                ? null
-                                : () => _openPeerProfile(),
+                            onAvatarTap:
+                                mine ? null : () => _openPeerProfile(),
                           );
                         },
                       ),
@@ -387,8 +439,9 @@ class _Bubble extends StatelessWidget {
             child: CircleAvatar(
               radius: 16,
               backgroundColor: colorScheme.surfaceContainerHighest,
-              backgroundImage:
-                  avatar.isNotEmpty ? NetworkImage(resolveImageUrl(avatar)) : null,
+              backgroundImage: avatar.isNotEmpty
+                  ? NetworkImage(resolveImageUrl(avatar))
+                  : null,
               child: avatar.isEmpty
                   ? Icon(Icons.person_rounded,
                       size: 18, color: colorScheme.onSurfaceVariant)

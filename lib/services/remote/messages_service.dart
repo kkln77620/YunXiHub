@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:kazumi/services/remote/dm_local_store.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -55,6 +57,63 @@ class DmConversation {
   }
 }
 
+/// 公告条目
+class AnnouncementItem {
+  final int id;
+  final String title;
+  final String content;
+  final String createdAt;
+
+  const AnnouncementItem({
+    required this.id,
+    this.title = '',
+    this.content = '',
+    this.createdAt = '',
+  });
+
+  factory AnnouncementItem.fromJson(Map<String, dynamic> j) =>
+      AnnouncementItem(
+        id: (j['id'] as num?)?.toInt() ?? 0,
+        title: j['title']?.toString() ?? '',
+        content: j['content']?.toString() ?? '',
+        createdAt: j['created_at']?.toString() ?? '',
+      );
+}
+
+/// 转发队列消息（服务器只转发，不存储）
+class DmRelayMessage {
+  final String msgId;
+  final int senderUid;
+  final String senderNickname;
+  final String content;
+  final List<String> images;
+  final String createdAt;
+
+  const DmRelayMessage({
+    required this.msgId,
+    required this.senderUid,
+    this.senderNickname = '',
+    this.content = '',
+    this.images = const [],
+    this.createdAt = '',
+  });
+
+  factory DmRelayMessage.fromJson(Map<String, dynamic> j) {
+    final imagesRaw = j['images'];
+    return DmRelayMessage(
+      msgId: j['msg_id']?.toString() ?? '',
+      senderUid: (j['sender_uid'] as num?)?.toInt() ?? 0,
+      senderNickname: j['sender_nickname']?.toString() ?? '',
+      content: j['content']?.toString() ?? '',
+      images: [
+        for (final im in (imagesRaw is List ? imagesRaw : const []))
+          im.toString()
+      ],
+      createdAt: j['created_at']?.toString() ?? '',
+    );
+  }
+}
+
 /// 站内消息条目
 class AppMessage {
   final int id;
@@ -103,6 +162,20 @@ class AppMessage {
       targetId: (j['target_id'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'actor_id': actorId,
+        'actor_nickname': actorNickname,
+        'comment_id': commentId,
+        'content': content,
+        'images': images,
+        'is_read': isRead ? 1 : 0,
+        'created_at': createdAt,
+        'kind': kind,
+        'target_id': targetId,
+      };
 }
 
 /// 消息服务：列表 / 已读 / 未读数
@@ -183,7 +256,10 @@ class MessagesService {
     }
   }
 
-  /// 私信会话列表（带 5 分钟内存缓存：进入消息页不重复加载）
+  /// 私信会话列表（**本地优先**：本地加密存储聚合；服务器仅作首次历史迁移）
+  ///
+  /// 首次（本地无任何会话）：拉服务器 conversations 一次性写入本地（迁移），
+  /// 之后全部以本地为准（服务器不存储聊天记录）
   static List<DmConversation>? _convsCache;
   static DateTime? _convsCacheAt;
 
@@ -207,9 +283,59 @@ class MessagesService {
     _convsCacheAt = null;
   }
 
-  /// 私信会话列表
+  /// 私信会话列表：本地聚合为主
   Future<List<DmConversation>> conversations() async {
     if (!_loggedIn) return const <DmConversation>[];
+    try {
+      // 本地加密存储聚合（权威）
+      final local = await DmLocalStore.instance.conversations();
+      if (local.isNotEmpty) {
+        // 本地昵称缺失时用服务器会话信息补全（仅补元数据，消息仍以本地为准）
+        try {
+          final remote = await _conversationsRemote();
+          if (remote.isNotEmpty) {
+            final byUid = {for (final c in remote) c.peerUid: c};
+            final merged = <DmConversation>[];
+            for (final c in local) {
+              final r = byUid[c.peerUid];
+              merged.add(r == null
+                  ? c
+                  : DmConversation(
+                      peerUid: c.peerUid,
+                      peerNickname:
+                          c.peerNickname.isEmpty ? r.peerNickname : c.peerNickname,
+                      peerAvatar: r.peerAvatar,
+                      peerLevel: r.peerLevel,
+                      isSponsor: r.isSponsor,
+                      lastContent: c.lastContent,
+                      lastTime: c.lastTime,
+                      unread: 0,
+                    ));
+            }
+            return merged;
+          }
+        } catch (_) {}
+        return local;
+      }
+      // 首次迁移：服务器历史会话一次性导入本地
+      final remote = await _conversationsRemote();
+      if (remote.isNotEmpty) {
+        for (final c in remote) {
+          final items = await dmDetail(peerUid: c.peerUid, limit: 100);
+          if (items.isNotEmpty) {
+            await DmLocalStore.instance.importHistory(c.peerUid, items);
+          }
+        }
+        return await DmLocalStore.instance.conversations();
+      }
+      return const <DmConversation>[];
+    } catch (_) {
+      return const <DmConversation>[];
+    }
+  }
+
+  /// 服务器会话接口（仅首次迁移 / 补全元数据用）
+  Future<List<DmConversation>> _conversationsRemote() async {
     try {
       final response = await _dio.get<dynamic>(
         '$_baseUrl/api/messages/conversations',
@@ -227,6 +353,55 @@ class MessagesService {
     }
   }
 
+  /// 系统消息持久缓存（**不自动删除**；进入页面先显缓存，后台静默刷新）
+  static const String sysCacheKey = 'system_messages_cache';
+
+  static List<AppMessage> _sysCacheDisk() {
+    try {
+      final raw = GStorage.getSetting(sysCacheKey).toString();
+      if (raw.isNotEmpty) {
+        final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+        return [
+          for (final m in list) AppMessage.fromJson(m)
+        ];
+      }
+    } catch (_) {}
+    return const [];
+  }
+
+  static void _sysCacheSave(List<AppMessage> items) {
+    try {
+      GStorage.putSetting(sysCacheKey,
+          jsonEncode([for (final m in items) m.toJson()]));
+    } catch (_) {}
+  }
+
+  /// 系统消息列表（带磁盘缓存：先返回缓存，同时后台拉服务器刷新）
+  Future<List<AppMessage>> cachedSystemMessages({int limit = 30}) async {
+    if (!_loggedIn) return const <AppMessage>[];
+    final cached = _sysCacheDisk();
+    // 后台静默刷新（不阻塞）
+    unawaited(_refreshSysCache(limit));
+    if (cached.isNotEmpty) return cached.take(limit).toList();
+    return _sysCacheDisk();
+  }
+
+  Future<void> _refreshSysCache(int limit) async {
+    try {
+      final items = await systemMessages(limit: limit);
+      if (items.isNotEmpty) {
+        // 与现有缓存去重合并（缓存最多 100 条）
+        final merged = <int, AppMessage>{};
+        for (final m in [..._sysCacheDisk(), ...items]) {
+          merged[m.id] = m;
+        }
+        final list = merged.values.toList()
+          ..sort((a, b) => b.id.compareTo(a.id));
+        _sysCacheSave(list.take(100).toList());
+      }
+    } catch (_) {}
+  }
+
   /// 系统消息列表
   Future<List<AppMessage>> systemMessages({
     int offset = 0,
@@ -242,10 +417,14 @@ class MessagesService {
       if (data['code'] != 0 || data['items'] is! List) {
         return const <AppMessage>[];
       }
-      return [
+      final items = [
         for (final it in data['items'] as List)
           if (it is Map) AppMessage.fromJson(it.cast<String, dynamic>())
       ];
+      if (offset == 0 && items.isNotEmpty) {
+        _sysCacheSave(items);
+      }
+      return items;
     } catch (_) {
       return const <AppMessage>[];
     }
@@ -281,12 +460,13 @@ class MessagesService {
   }
 
   /// 发送私信（仅好友；images 为已上传的图片地址列表，最多3张）
-  Future<String?> sendDm({
+  /// 服务器只转发（写入队列），返回 (错误信息?, msgId)
+  Future<({String? err, String? msgId})> sendDm({
     required int toUid,
     required String content,
     List<String> images = const [],
   }) async {
-    if (!_loggedIn) return '未登录';
+    if (!_loggedIn) return (err: '未登录', msgId: null);
     try {
       final response = await _dio.post<dynamic>(
         '$_baseUrl/api/messages/send',
@@ -297,10 +477,51 @@ class MessagesService {
         },
       );
       final data = _decode(response.data);
-      if (data['code'] == 0) return null;
-      return data['msg']?.toString() ?? '发送失败';
+      if (data['code'] == 0) {
+        return (err: null, msgId: data['msg_id']?.toString());
+      }
+      return (err: data['msg']?.toString() ?? '发送失败', msgId: null);
     } catch (_) {
-      return '网络异常，发送失败';
+      return (err: '网络异常，发送失败', msgId: null);
+    }
+  }
+
+  /// 拉取公告列表（公开接口，无需登录）
+  Future<List<AnnouncementItem>> announcements() async {
+    try {
+      final response = await _dio.get<dynamic>('$_baseUrl/api/announcements');
+      final data = _decode(response.data);
+      if (data['code'] != 0 || data['items'] is! List) {
+        return const <AnnouncementItem>[];
+      }
+      return [
+        for (final it in data['items'] as List)
+          if (it is Map) AnnouncementItem.fromJson(it.cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return const <AnnouncementItem>[];
+    }
+  }
+
+  /// 拉取转发队列（推送式）：有返回新消息，无则空列表（零打扰）
+  /// [peerUid] 可选：只取某会话
+  Future<List<DmRelayMessage>> pollDm({int? peerUid}) async {
+    if (!_loggedIn) return const <DmRelayMessage>[];
+    try {
+      final response = await _dio.get<dynamic>(
+        '$_baseUrl/api/messages/poll',
+        queryParameters: {if (peerUid != null && peerUid > 0) 'peer_uid': peerUid},
+      );
+      final data = _decode(response.data);
+      if (data['code'] != 0 || data['items'] is! List) {
+        return const <DmRelayMessage>[];
+      }
+      return [
+        for (final it in data['items'] as List)
+          if (it is Map) DmRelayMessage.fromJson(it.cast<String, dynamic>())
+      ];
+    } catch (_) {
+      return const <DmRelayMessage>[];
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:kazumi/services/remote/entitlements_service.dart';
 import 'package:kazumi/services/remote/history_sync_service.dart';
 import 'package:kazumi/services/remote/messages_service.dart';
 import 'package:kazumi/services/storage/settings_keys.dart';
@@ -300,6 +301,8 @@ class AuthService {
       );
       await _applyUserInfo(user.cast<String, dynamic>());
     }
+    // 登录/注册成功即同步权益（服务器下发限制，本地不写死；失败静默用旧缓存）
+    unawaited(EntitlementsService.sync());
     // 登录/注册成功即同步历史记录，并把游客设备数据并入账号（失败静默）
     unawaited(HistorySyncService.instance.syncNow());
     unawaited(HistorySyncService.instance.mergeGuestToAccount());
