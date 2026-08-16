@@ -84,8 +84,8 @@ class DmLocalStore {
     final digest = sha256.convert(utf8.encode(tag));
     final key = Uint8List.fromList(digest.bytes);
     final boxName = 'dm_' + digest.toString().substring(0, 16);
-    // 加密打开（数据落盘为密文）
-    _box = await Hive.openBox(boxName, encryptionCipher: AesCipher(key));
+    // 加密打开（数据落盘为密文；hive_ce 的 AES256-CBC 加密）
+    _box = await Hive.openBox(boxName, encryptionCipher: HiveAesCipher(key));
     return _box!;
   }
 
@@ -159,6 +159,7 @@ class DmLocalStore {
       result.add(DmConversation(
         peerUid: peerUid,
         peerNickname: nick ?? '',
+        peerAvatar: '',
         lastContent: last.content.isEmpty && last.images.isNotEmpty
             ? '[图片]'
             : last.content,

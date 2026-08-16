@@ -100,7 +100,7 @@ class EntitlementsService {
 
   static Entitlements fromDisk() {
     try {
-      final raw = GStorage.getSetting(cacheKey).toString();
+      final raw = GStorage.getSetting(SettingsKeys.entitlementsCache).toString();
       if (raw.isNotEmpty) {
         final map = (jsonDecode(raw) as Map).cast<String, dynamic>();
         return Entitlements.fromJson(map);
@@ -111,7 +111,8 @@ class EntitlementsService {
 
   static void saveDisk(Entitlements e) {
     try {
-      GStorage.putSetting(cacheKey, jsonEncode(e.toJson()));
+      GStorage.putSetting(
+          SettingsKeys.entitlementsCache, jsonEncode(e.toJson()));
     } catch (_) {}
   }
 

@@ -354,11 +354,10 @@ class MessagesService {
   }
 
   /// 系统消息持久缓存（**不自动删除**；进入页面先显缓存，后台静默刷新）
-  static const String sysCacheKey = 'system_messages_cache';
-
   static List<AppMessage> _sysCacheDisk() {
     try {
-      final raw = GStorage.getSetting(sysCacheKey).toString();
+      final raw =
+          GStorage.getSetting(SettingsKeys.systemMessagesCache).toString();
       if (raw.isNotEmpty) {
         final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
         return [
@@ -371,7 +370,8 @@ class MessagesService {
 
   static void _sysCacheSave(List<AppMessage> items) {
     try {
-      GStorage.putSetting(sysCacheKey,
+      GStorage.putSetting(
+          SettingsKeys.systemMessagesCache,
           jsonEncode([for (final m in items) m.toJson()]));
     } catch (_) {}
   }

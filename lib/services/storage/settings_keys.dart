@@ -42,6 +42,19 @@ class SettingKey<T> {
 // Add new settings here. SettingsKeys is the public typed registry used by
 // callers; new keys can use literal string names directly.
 class SettingsKeys {
+  /// 权益缓存（服务器下发，不自动删除）
+  static const entitlementsCache = SettingKey<String>(
+    'entitlements_cache',
+    '',
+    group: SettingGroup.misc,
+  );
+
+  /// 系统消息持久缓存（不自动删除）
+  static const systemMessagesCache = SettingKey<String>(
+    'system_messages_cache',
+    '',
+    group: SettingGroup.misc,
+  );
   static const hAenable = SettingKey<bool>(
     _SettingBoxKey.hAenable,
     true,
